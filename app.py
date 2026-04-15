@@ -76,6 +76,11 @@ def index():
     """Main dashboard page"""
     return render_template('index.html')
 
+@app.route('/token-usage')
+def token_usage():
+    """Token usage dashboard page"""
+    return render_template('token-usage.html')
+
 @app.route('/api/cron-jobs')
 def api_cron_jobs():
     """Get all cron jobs"""
@@ -265,6 +270,213 @@ def api_running_jobs():
         return jsonify({'count': 0, 'jobs': [], 'timestamp': now_ms})
     except Exception as e:
         return jsonify({'error': str(e), 'count': 0, 'jobs': [], 'timestamp': now_ms})
+
+@app.route('/api/token-usage')
+def api_token_usage():
+    """Get aggregated token usage data"""
+    try:
+        # Load cron jobs
+        with open(CRON_JOBS_FILE, 'r') as f:
+            jobs_data = json.load(f)
+        
+        now_ms = int(datetime.now().timestamp() * 1000)
+        day_ms = 86400000  # 24 hours in milliseconds
+        
+        # Initialize aggregations
+        usage_data = {
+            'total': {
+                'total_tokens': 0,
+                'input_tokens': 0,
+                'output_tokens': 0,
+                'total_runs': 0,
+                'estimated_cost': 0.0
+            },
+            'by_job': {},
+            'by_model': {},
+            'by_provider': {},
+            'by_date': {},
+            'by_day': {
+                'today': {'total_tokens': 0, 'input_tokens': 0, 'output_tokens': 0, 'runs': 0},
+                'week': {'total_tokens': 0, 'input_tokens': 0, 'output_tokens': 0, 'runs': 0},
+                'month': {'total_tokens': 0, 'input_tokens': 0, 'output_tokens': 0, 'runs': 0}
+            },
+            'daily_trends': []
+        }
+        
+        # Process each job's runs
+        for job in jobs_data.get('jobs', []):
+            job_id = job['id']
+            job_name = job.get('name', 'Unnamed Job')
+            
+            runs_file = os.path.join(CRON_RUNS_DIR, f'{job_id}.jsonl')
+            
+            if not os.path.exists(runs_file):
+                continue
+            
+            try:
+                with open(runs_file, 'r') as f:
+                    for line in f:
+                        if not line.strip():
+                            continue
+                        
+                        try:
+                            run = json.loads(line)
+                            
+                            # Only process finished/failed runs with usage data
+                            if run.get('action') not in ['finished', 'failed']:
+                                continue
+                            
+                            usage = run.get('usage', {})
+                            if not usage or 'total_tokens' not in usage:
+                                continue
+                            
+                            run_at = run.get('runAtMs', run.get('ts', 0))
+                            if not run_at:
+                                continue
+                            
+                            # Extract token values
+                            total_tokens = usage.get('total_tokens', 0)
+                            input_tokens = usage.get('input_tokens', 0)
+                            output_tokens = usage.get('output_tokens', 0)
+                            model = run.get('model', 'unknown')
+                            provider = run.get('provider', 'unknown')
+                            
+                            # Skip runs with zero tokens
+                            if total_tokens == 0:
+                                continue
+                            
+                            # Total aggregations
+                            usage_data['total']['total_tokens'] += total_tokens
+                            usage_data['total']['input_tokens'] += input_tokens
+                            usage_data['total']['output_tokens'] += output_tokens
+                            usage_data['total']['total_runs'] += 1
+                            
+                            # By job
+                            if job_id not in usage_data['by_job']:
+                                usage_data['by_job'][job_id] = {
+                                    'job_id': job_id,
+                                    'name': job_name,
+                                    'total_tokens': 0,
+                                    'input_tokens': 0,
+                                    'output_tokens': 0,
+                                    'runs': 0,
+                                    'avg_tokens': 0
+                                }
+                            usage_data['by_job'][job_id]['total_tokens'] += total_tokens
+                            usage_data['by_job'][job_id]['input_tokens'] += input_tokens
+                            usage_data['by_job'][job_id]['output_tokens'] += output_tokens
+                            usage_data['by_job'][job_id]['runs'] += 1
+                            
+                            # By model
+                            if model not in usage_data['by_model']:
+                                usage_data['by_model'][model] = {
+                                    'total_tokens': 0,
+                                    'input_tokens': 0,
+                                    'output_tokens': 0,
+                                    'runs': 0
+                                }
+                            usage_data['by_model'][model]['total_tokens'] += total_tokens
+                            usage_data['by_model'][model]['input_tokens'] += input_tokens
+                            usage_data['by_model'][model]['output_tokens'] += output_tokens
+                            usage_data['by_model'][model]['runs'] += 1
+                            
+                            # By provider
+                            if provider not in usage_data['by_provider']:
+                                usage_data['by_provider'][provider] = {
+                                    'total_tokens': 0,
+                                    'runs': 0
+                                }
+                            usage_data['by_provider'][provider]['total_tokens'] += total_tokens
+                            usage_data['by_provider'][provider]['runs'] += 1
+                            
+                            # By date (daily trends)
+                            run_date = datetime.fromtimestamp(run_at / 1000).date()
+                            date_str = run_date.strftime('%Y-%m-%d')
+                            
+                            if date_str not in usage_data['by_date']:
+                                usage_data['by_date'][date_str] = {
+                                    'date': date_str,
+                                    'total_tokens': 0,
+                                    'input_tokens': 0,
+                                    'output_tokens': 0,
+                                    'runs': 0
+                                }
+                            usage_data['by_date'][date_str]['total_tokens'] += total_tokens
+                            usage_data['by_date'][date_str]['input_tokens'] += input_tokens
+                            usage_data['by_date'][date_str]['output_tokens'] += output_tokens
+                            usage_data['by_date'][date_str]['runs'] += 1
+                            
+                            # Time-based aggregations
+                            time_diff = now_ms - run_at
+                            
+                            # Today (last 24 hours)
+                            if time_diff < day_ms:
+                                usage_data['by_day']['today']['total_tokens'] += total_tokens
+                                usage_data['by_day']['today']['input_tokens'] += input_tokens
+                                usage_data['by_day']['today']['output_tokens'] += output_tokens
+                                usage_data['by_day']['today']['runs'] += 1
+                            
+                            # Week (last 7 days)
+                            if time_diff < day_ms * 7:
+                                usage_data['by_day']['week']['total_tokens'] += total_tokens
+                                usage_data['by_day']['week']['input_tokens'] += input_tokens
+                                usage_data['by_day']['week']['output_tokens'] += output_tokens
+                                usage_data['by_day']['week']['runs'] += 1
+                            
+                            # Month (last 30 days)
+                            if time_diff < day_ms * 30:
+                                usage_data['by_day']['month']['total_tokens'] += total_tokens
+                                usage_data['by_day']['month']['input_tokens'] += input_tokens
+                                usage_data['by_day']['month']['output_tokens'] += output_tokens
+                                usage_data['by_day']['month']['runs'] += 1
+                            
+                        except json.JSONDecodeError:
+                            continue
+                            
+            except Exception:
+                continue
+        
+        # Calculate averages
+        for job_id, job_data in usage_data['by_job'].items():
+            if job_data['runs'] > 0:
+                job_data['avg_tokens'] = job_data['total_tokens'] // job_data['runs']
+        
+        # Sort by total tokens (descending)
+        usage_data['by_job'] = sorted(
+            usage_data['by_job'].values(),
+            key=lambda x: x['total_tokens'],
+            reverse=True
+        )
+        
+        # Sort daily trends by date
+        usage_data['daily_trends'] = sorted(
+            usage_data['by_date'].values(),
+            key=lambda x: x['date']
+        )
+        
+        # Calculate estimated cost (simplified pricing)
+        # Note: These are example prices - adjust based on actual pricing
+        PRICING = {
+            'glm-4.7': {'input_per_1k': 0.001, 'output_per_1k': 0.002},
+            'gemini-pro': {'input_per_1k': 0.0005, 'output_per_1k': 0.0015},
+            'default': {'input_per_1k': 0.001, 'output_per_1k': 0.002}
+        }
+        
+        total_cost = 0.0
+        for model, model_data in usage_data['by_model'].items():
+            pricing = PRICING.get(model, PRICING['default'])
+            input_cost = (model_data['input_tokens'] / 1000) * pricing['input_per_1k']
+            output_cost = (model_data['output_tokens'] / 1000) * pricing['output_per_1k']
+            total_cost += input_cost + output_cost
+        
+        usage_data['total']['estimated_cost'] = round(total_cost, 4)
+        
+        return jsonify(usage_data)
+        
+    except FileNotFoundError:
+        return jsonify({'error': 'No token usage data found', 'total': {'total_tokens': 0}})
+    except Exception as e:
+        return jsonify({'error': str(e), 'total': {'total_tokens': 0}})
 
 @app.template_filter('datetime')
 def datetime_filter(timestamp_ms):
