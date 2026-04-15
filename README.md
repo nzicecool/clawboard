@@ -120,3 +120,110 @@ Add under `[Service]`:
 User=pi
 WorkingDirectory=/home/pi/.openclaw/workspace/dashboard
 ```
+
+## Version Control (Git)
+
+The dashboard code is version-controlled using Git. This allows us to:
+- Track all changes
+- Rollback to working versions if something breaks
+- Compare changes between versions
+- Maintain a clean history
+
+### Git Workflow
+
+#### Before Making Changes
+```bash
+cd ~/.openclaw/workspace/dashboard
+git status          # Check current state
+git diff            # See what will change
+```
+
+#### Commit Changes (Working State)
+```bash
+# 1. Stage changes
+git add .
+
+# 2. Commit with descriptive message
+git commit -m "Fixed tab switching issue
+
+- Removed broken JavaScript code in renderJobHistory function
+- Dashboard now loads all metrics correctly
+- No more stuck loading states"
+
+# 3. View commit history
+git log --oneline -5
+```
+
+#### Rollback to Working Version (If Something Breaks)
+```bash
+# View recent commits
+git log --oneline
+
+# Reset to specific commit (e.g., previous working version)
+git reset --hard <commit-hash>
+
+# Example: rollback to previous commit
+git reset --hard HEAD~1
+
+# Restart dashboard after rollback
+sudo systemctl restart openclaw-dashboard.service
+```
+
+#### Check What Changed
+```bash
+# View changes since last commit
+git diff HEAD
+
+# View changes in specific file
+git diff HEAD templates/index.html
+
+# View commit details
+git show <commit-hash>
+```
+
+#### Best Practices
+1. **Commit frequently** - Small, focused commits are easier to understand and rollback
+2. **Use descriptive messages** - Explain WHAT changed and WHY
+3. **Test before committing** - Make sure dashboard works after changes
+4. **Check git status** - Always see what will be committed before committing
+5. **Keep history clean** - Don't commit broken code intentionally
+
+### Example Workflow for Dashboard Updates
+```bash
+# 1. Make backup before major changes
+git tag backup-before-$(date +%Y%m%d-%H%M%S)
+
+# 2. Make your changes (edit files)
+
+# 3. Test changes locally
+python3 app.py  # Test on different port if needed
+
+# 4. If working: commit changes
+git add .
+git commit -m "Fixed broken job history display
+
+- Replaced broken JavaScript with proper error handling
+- Added loading states for better UX
+- Tested with all 5 cron jobs"
+
+# 5. Restart dashboard service
+sudo systemctl restart openclaw-dashboard.service
+
+# 6. Verify in browser
+# Open http://192.168.0.104:5000
+
+# 7. If broken: rollback
+git reset --hard HEAD~1
+sudo systemctl restart openclaw-dashboard.service
+```
+
+### Quick Reference
+| Command | Purpose |
+|---------|---------|
+| `git status` | Check current state |
+| `git log --oneline` | View commit history |
+| `git add .` | Stage all changes |
+| `git commit -m "message"` | Commit changes |
+| `git diff` | View unstaged changes |
+| `git reset --hard HEAD~1` | Rollback to previous commit |
+| `git show <hash>` | View commit details |
