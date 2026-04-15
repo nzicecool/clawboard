@@ -1,0 +1,17 @@
+[Unit]
+Description=OpenClaw Web Dashboard
+After=network.target openclaw.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/.openclaw/workspace/dashboard
+Environment="PATH=/home/pi/.local/bin:/usr/bin:/bin"
+ExecStart=/usr/bin/python3 app.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

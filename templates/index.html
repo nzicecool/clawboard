@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClaw Dashboard</title>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .card {
+            transition: all 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+        .status-ok { color: #10b981; }
+        .status-error { color: #ef4444; }
+        .status-pending { color: #f59e0b; }
+        .refresh-spin {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-8">
+            <div>
+                <a href="/" class="no-underline"><h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent hover:scale-105 transition-transform cursor-pointer">
+                    <i class="fas fa-robot mr-2"></i>OpenClaw Dashboard
+                </h1>
+                <p class="text-gray-400 mt-1">Manage your AI agents, scheduled tasks, and skills</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <span id="last-updated" class="text-sm text-gray-500"></span>
+                <button onclick="loadAllData()" id="refresh-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- System Status -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">Active Jobs</p>
+                        <p id="active-jobs-count" class="text-3xl font-bold text-white">-</p>
+                    </div>
+                    <div class="bg-blue-500/20 p-3 rounded-lg">
+                        <i class="fas fa-clock text-blue-400 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">Total Skills</p>
+                        <p id="skills-count" class="text-3xl font-bold text-white">-</p>
+                    </div>
+                    <div class="bg-purple-500/20 p-3 rounded-lg">
+                        <i class="fas fa-puzzle-piece text-purple-400 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">Next Run</p>
+                        <p id="next-run" class="text-lg font-bold text-white">-</p>
+                    </div>
+                    <div class="bg-green-500/20 p-3 rounded-lg">
+                        <i class="fas fa-bolt text-green-400 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">System Status</p>
+                        <p id="system-status" class="text-lg font-bold text-white">-</p>
+                    </div>
+                    <div id="status-icon" class="bg-green-500/20 p-3 rounded-lg">
+                        <i class="fas fa-check-circle text-green-400 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex gap-2 mb-6 border-b border-gray-700 pb-4">
+            <button onclick="switchTab(event, 'cron')" id="tab-cron" class="tab-btn px-6 py-2 rounded-lg bg-blue-600 text-white font-medium transition">
+                <i class="fas fa-clock mr-2"></i>Scheduled Tasks
+            </button>
+            <button onclick="switchTab(event, 'skills')" id="tab-skills" class="tab-btn px-6 py-2 rounded-lg bg-gray-700 text-gray-300 font-medium hover:bg-gray-600 transition">
+                <i class="fas fa-puzzle-piece mr-2"></i>Skills
+            </button>
+            <button onclick="switchTab(event, 'history')" id="tab-history" class="tab-btn px-6 py-2 rounded-lg bg-gray-700 text-gray-300 font-medium hover:bg-gray-600 transition">
+                <i class="fas fa-history mr-2"></i>Run History
+            </button>
+            <button onclick="switchTab(event, 'website-health')" id="tab-website-health" class="tab-btn px-6 py-2 rounded-lg bg-gray-700 text-gray-300 font-medium hover:bg-gray-600 transition">
+                <i class="fas fa-heartbeat mr-2"></i>Website Health
+            </button>
+        </div>
+
+        <!-- Content Area -->
+        <div id="content-area">
+            <!-- Cron Jobs Tab -->
+            <div id="tab-cron-content" class="tab-content">
+                <div id="cron-jobs-container" class="space-y-4">
+                    <div class="text-center py-12 text-gray-500">
+                        <i class="fas fa-spinner fa-spin text-3xl mb-4"></i>
+                        <p>Loading cron jobs...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Website Health Tab -->
+            <div id="tab-website-health-content" class="tab-content hidden">
+                <div id="website-health-container" class="space-y-4">
+                    <div class="text-center py-12 text-gray-500">
+                        <i class="fas fa-spinner fa-spin text-3xl mb-4"></i>
+                        <p>Loading website health data...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Skills Tab -->
+            <div id="tab-skills-content" class="tab-content hidden">
+                <div id="skills-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="text-center py-12 text-gray-500">
+                        <i class="fas fa-spinner fa-spin text-3xl mb-4"></i>
+                        <p>Loading skills...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- History Tab -->
+            <div id="tab-history-content" class="tab-content hidden">
+                <div id="history-container" class="space-y-4">
+                    <p class="text-gray-500 text-center py-8">Click on a job to view its run history</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Job Detail Modal -->
+    <div id="job-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 rounded-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto border border-gray-700">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 id="modal-title" class="text-xl font-bold text-white"></h2>
+                    <button onclick="closeModal()" class="text-gray-400 hover:text-white">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div id="modal-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let cronJobsData = null;
+        let skillsData = null;
+        let historyData = {};
+        let runningJobsData = null;
+
+        function switchTab(event, tabName) {
+            try {
+                // Prevent default behavior (page reload, form submission, etc.)
+                if (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+
+                // Hide all tabs
+                document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+                document.querySelectorAll('.tab-btn').forEach(btn => {
+                    btn.classList.remove('bg-blue-600', 'text-white');
+                    btn.classList.add('bg-gray-700', 'text-gray-300');
+                });
+
+                // Show selected tab
+                const contentElement = document.getElementById(`tab-${tabName}-content`);
+                const tabElement = document.getElementById(`tab-${tabName}`);
+
+                if (contentElement) {
+                    contentElement.classList.remove('hidden');
+                } else {
+                    console.error('Tab content not found:', tabName);
+                    return;
+                }
+
+                if (tabElement) {
+                    tabElement.classList.remove('bg-gray-700', 'text-gray-300');
+                    tabElement.classList.add('bg-blue-600', 'text-white');
+                } else {
+                    console.error('Tab button not found:', tabName);
+                    return;
+                }
+
+                console.log('Switched to tab:', tabName);
+            } catch (error) {
+                console.error('Error switching tabs:', error);
+            }
+        }
+
+        function showTab(tabName) {
+            switchTab(null, tabName);
+        }
+
+        async function loadAllData() {
+            const btn = document.getElementById('refresh-btn');
+            btn.classList.add('opacity-50');
+            btn.querySelector('i').classList.add('refresh-spin');
+
+            try {
+                await Promise.all([
+                    loadCronJobs(),
+                    loadSkills(),
+                    loadWebsiteHealth(),
+                    loadRunningJobs()
+                ]);
+
+                updateStats();
+                document.getElementById('last-updated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+            } catch (error) {
+                console.error('Error loading data:', error);
+            } finally {
+                btn.classList.remove('opacity-50');
+                btn.querySelector('i').classList.remove('refresh-spin');
+            }
+        }
+
+        async function loadWebsiteHealth() {
+            try {
+                const response = await fetch('/api/website-health');
+                websiteHealthData = await response.json();
+                renderWebsiteHealth();
+            } catch (error) {
+                console.error('Error loading website health:', error);
+                document.getElementById('website-health-container').innerHTML =
+                    '<div class="text-red-500 text-center py-8">Failed to load website health data</div>';
+            }
+        }
+
+        async function loadRunningJobs() {
+            try {
+                const response = await fetch('/api/running-jobs');
+                runningJobsData = await response.json();
+            } catch (error) {
+                console.error('Error loading running jobs:', error);
+                runningJobsData = { count: 0, jobs: [] };
+            }
+        }
+
+        function renderWebsiteHealth() {
+            const container = document.getElementById('website-health-container');
+
+            if (!websiteHealthData || !websiteHealthData.websites || websiteHealthData.websites.length === 0) {
+                container.innerHTML = '<div class="text-gray-500 text-center py-8">No websites being monitored</div>';
+                return;
+            }
+
+            let html = websiteHealthData.websites.map(site => `
+                <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700 cursor-pointer" onclick="viewWebsiteDetail('${site.url}')">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="flex-1">
+                            <h3 class="text-lg font-semibold text-white mb-2">${site.name}</h3>
+                            <p class="text-sm text-gray-400 mb-1">${site.url}</p>
+                            <p class="text-xs text-gray-500">Interval: ${site.interval_minutes} min</p>
+                        </div>
+                        <div class="flex items-start gap-4">
+                            <p class="text-gray-400 text-sm mb-1">Status:</p>
+                            <p class="text-xs text-gray-500">Checks: ${site.rolling_window_checks} (${site.successful_checks})</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <p class="text-xs text-gray-500">Avg: ${site.avg_response_time_ms}ms</p>
+                        <p class="text-sm font-semibold mb-1">${getStatusEmoji(site.status)} ${getStatusText(site.status)}</p>
+                    </div>
+                </div>
+            `).join('');
+
+            // Add summary
+            const greenCount = websiteHealthData.websites.filter(s => s.status === 'green').length;
+            const amberCount = websiteHealthData.websites.filter(s => s.status === 'amber').length;
+            const redCount = websiteHealthData.websites.filter(s => s.status === 'red').length;
+
+            html += `
+                <div class="bg-gray-700/50 rounded-lg p-4 mt-4">
+                    <p class="text-center text-gray-400">Summary: 🟢 ${greenCount} | 🟡 ${amberCount} | 🔴 ${redCount}</p>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        function getStatusEmoji(status) {
+            const statusEmojis = {
+                'green': '🟢',
+                'amber': '🟡',
+                'red': '🔴'
+            };
+            return statusEmojis[status] || '❓';
+        }
+
+        function getStatusText(status) {
+            const statusMessages = {
+                'green': 'Healthy',
+                'amber': 'Degraded',
+                'red': 'Critical'
+            };
+            return statusMessages[status] || 'Unknown';
+        }
+
+        function viewWebsiteDetail(url) {
+            alert(`Website: ${url}\n\nThis is where you can monitor the website status.\n\nCheck the "Website Health" tab for real-time updates.`);
+        }
+
+        async function loadCronJobs() {
+            try {
+                const response = await fetch('/api/cron-jobs');
+                cronJobsData = await response.json();
+                renderCronJobs();
+            } catch (error) {
+                console.error('Error loading cron jobs:', error);
+                document.getElementById('cron-jobs-container').innerHTML =
+                    '<div class="text-red-500 text-center py-8">Failed to load cron jobs</div>';
+            }
+        }
+
+        function renderCronJobs() {
+            const container = document.getElementById('cron-jobs-container');
+
+            if (!cronJobsData || !cronJobsData.jobs || cronJobsData.jobs.length === 0) {
+                container.innerHTML = '<div class="text-gray-500 text-center py-8">No scheduled tasks found</div>';
+                return;
+            }
+
+            container.innerHTML = cronJobsData.jobs.map(job => {
+                // Check if this job is currently running
+                const isRunning = runningJobsData && runningJobsData.jobs &&
+                    runningJobsData.jobs.some(rj => rj.jobId === job.id);
+                const runningJob = isRunning && runningJobsData.jobs.find(rj => rj.jobId === job.id);
+
+                const statusColor = isRunning ? 'border-blue-500' :
+                    (job.enabled ? 'border-gray-700' : 'border-red-500');
+                const statusBg = isRunning ? 'bg-blue-500' :
+                    (job.enabled ? 'bg-green-500' : 'bg-red-500');
+                const statusText = isRunning ? '🔄 Running' :
+                    (job.enabled ? '✅ Active' : '❌ Disabled');
+
+                return `
+                <div class="card bg-gray-800 rounded-xl p-6 border ${statusColor} cursor-pointer" onclick="showJobDetail('${job.id}')">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2">
+                                <h3 class="text-lg font-semibold text-white mb-1">${job.name || 'Unnamed Job'}</h3>
+                                ${isRunning ? '<span class="refresh-spin text-blue-400"><i class="fas fa-spinner fa-spin"></i></span>' : ''}
+                            </div>
+                            <p class="text-sm text-gray-400 font-mono">${job.id}</p>
+                        </div>
+                        <span class="px-3 py-1 rounded-full text-xs font-medium ${statusBg}/20 ${isRunning ? 'text-blue-400' : (job.enabled ? 'text-green-400' : 'text-red-400')}">
+                            ${statusText}
+                        </span>
+                    </div>
+
+                    ${isRunning ? `
+                    <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-blue-400 font-medium"><i class="fas fa-play-circle mr-2"></i>Currently Running</span>
+                            <span class="text-sm text-gray-400">${formatDuration(runningJob.elapsedMs)} ago</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <p class="text-gray-500">Started</p>
+                                <p class="text-white">${new Date(runningJob.startedAtMs).toLocaleTimeString()}</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-500">Model</p>
+                                <p class="text-white">${runningJob.model || 'Unknown'}</p>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <p class="text-xs text-gray-500">Session ID: ${runningJob.sessionId || 'N/A'}</p>
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                            <p class="text-gray-500">Schedule</p>
+                            <p class="text-white">${formatSchedule(job.schedule)}</p>
+                        </div>
+                        <div>
+                            <p class="text-gray-500">Last Run</p>
+                            <p class="text-white">${formatRelativeTime(job.state?.lastRunAtMs)}</p>
+                        </div>
+                        <div>
+                            <p class="text-gray-500">Last Status</p>
+                            <p class="${job.state?.lastRunStatus === 'ok' ? 'status-ok' : 'status-error'}">
+                                ${job.state?.lastRunStatus || 'N/A'}
+                            </p>
+                        </div>
+                        <div>
+                            <p class="text-gray-500">Next Run</p>
+                            <p class="text-white">${formatRelativeTime(job.state?.nextRunAtMs)}</p>
+                        </div>
+                    </div>
+
+                    ${job.state?.usage ? `
+                    <div class="mt-3 bg-purple-500/10 border border-purple-500/30 rounded-lg p-3">
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-purple-400"><i class="fas fa-chart-line mr-1"></i>Last Token Usage</span>
+                            <span class="text-white font-medium">${job.state.usage.total_tokens?.toLocaleString() || 'N/A'} tokens</span>
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    <div class="mt-4 flex items-center justify-between">
+                        <div class="flex items-center gap-4 text-xs text-gray-500">
+                            ${job.state?.lastDurationMs ? `Last run: ${formatDuration(job.state.lastDurationMs)}` : ''}
+                            ${job.state?.consecutiveErrors && job.state.consecutiveErrors > 0 ? `
+                                <span class="text-red-400"><i class="fas fa-exclamation-triangle mr-1"></i>${job.state.consecutiveErrors} consecutive errors</span>
+                            ` : ''}
+                        </div>
+                        ${!isRunning ? `
+                        <button onclick="event.stopPropagation(); runJob('${job.id}')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm transition">
+                            <i class="fas fa-play mr-1"></i> Run Now
+                        </button>
+                        ` : ''}
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+
+        async function loadSkills() {
+            try {
+                const response = await fetch('/api/skills');
+                const data = await response.json();
+                skillsData = data.skills;
+                renderSkills();
+            } catch (error) {
+                console.error('Error loading skills:', error);
+                document.getElementById('skills-container').innerHTML =
+                    '<div class="text-red-500 text-center py-8">Failed to load skills</div>';
+            }
+        }
+
+        function renderSkills() {
+            const container = document.getElementById('skills-container');
+
+            if (!skillsData || skillsData.length === 0) {
+                container.innerHTML = '<div class="text-gray-500 text-center py-8">No skills found</div>';
+                return;
+            }
+
+            container.innerHTML = skillsData.map(skill => `
+                <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <div class="flex items-start gap-4">
+                        <div class="bg-purple-500/20 p-3 rounded-lg flex-shrink-0">
+                            <i class="fas fa-puzzle-piece text-purple-400 text-xl"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h3 class="text-lg font-semibold text-white mb-2">${skill.name}</h3>
+                            <p class="text-sm text-gray-400 line-clamp-2">${skill.description}</p>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateStats() {
+            // Running jobs count
+            if (runningJobsData) {
+                const runningCount = runningJobsData.count || 0;
+                const runningText = document.getElementById('active-jobs-count');
+                runningText.textContent = runningCount;
+                
+                // Add visual indicator if jobs are running
+                if (runningCount > 0) {
+                    runningText.classList.add('text-blue-400');
+                    runningText.classList.remove('text-white');
+                } else {
+                    runningText.classList.remove('text-blue-400');
+                    runningText.classList.add('text-white');
+                }
+            }
+
+            // Active jobs count (enabled)
+            if (cronJobsData && cronJobsData.jobs) {
+                const enabledCount = cronJobsData.jobs.filter(j => j.enabled).length;
+
+                // Find next run
+                const enabledJobs = cronJobsData.jobs.filter(j => j.enabled && j.state?.nextRunAtMs);
+                if (enabledJobs.length > 0) {
+                    const nextRun = enabledJobs.reduce((a, b) =>
+                        a.state.nextRunAtMs < b.state.nextRunAtMs ? a : b
+                    );
+                    document.getElementById('next-run').textContent =
+                        formatRelativeTime(nextRun.state.nextRunAtMs);
+                }
+            }
+
+            // Skills count
+            if (skillsData) {
+                document.getElementById('skills-count').textContent = skillsData.length;
+            }
+
+            // System status
+            document.getElementById('system-status').textContent = 'Online';
+            document.getElementById('system-status').className = 'text-lg font-bold text-green-400';
+        }
+
+        function formatSchedule(schedule) {
+            if (!schedule) return 'N/A';
+            if (schedule.kind === 'cron') {
+                return `${schedule.expr} (${schedule.tz || 'UTC'})`;
+            } else if (schedule.kind === 'every') {
+                return `Every ${Math.round(schedule.everyMs / 1000 / 60)} min`;
+            } else if (schedule.kind === 'at') {
+                return new Date(schedule.at).toLocaleString();
+            }
+            return 'Custom';
+        }
+
+        function formatRelativeTime(timestampMs) {
+            if (!timestampMs) return 'N/A';
+            const now = Date.now();
+            const diff = timestampMs - now;
+            const absDiff = Math.abs(diff);
+            const minutes = Math.floor(absDiff / 60000);
+            const hours = Math.floor(absDiff / 3600000);
+            const days = Math.floor(absDiff / 86400000);
+
+            if (absDiff < 60000) return 'Just now';
+            if (minutes < 60) return diff > 0 ? `In ${minutes}m` : `${minutes}m ago`;
+            if (hours < 24) return diff > 0 ? `In ${hours}h` : `${hours}h ago`;
+            return diff > 0 ? `In ${days}d` : `${days}d ago`;
+        }
+
+        function formatDuration(ms) {
+            if (!ms) return 'N/A';
+            const seconds = Math.floor(ms / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            if (minutes > 0) return `${minutes}m ${secs}s`;
+            return `${secs}s`;
+        }
+
+        async function showJobDetail(jobId) {
+            console.log('showJobDetail called with jobId:', jobId);
+            
+            // Switch to history tab first
+            switchTab(null, 'history');
+            
+            const container = document.getElementById('history-container');
+
+            if (!container) {
+                console.error('History container not found');
+                return;
+            }
+
+            // Show loading state
+            container.innerHTML = '<div class="text-center py-12 text-gray-500"><i class="fas fa-spinner fa-spin text-3xl mb-4"></i><p>Loading job history...</p></div>';
+
+            // Find job
+            const job = cronJobsData?.jobs?.find(j => j.id === jobId);
+            if (!job) {
+                console.error('Job not found for ID:', jobId);
+                container.innerHTML = '<div class="text-red-500 text-center py-8"><i class="fas fa-exclamation-circle text-3xl mb-2"></i><p>Job not found</p></div>';
+                return;
+            }
+
+            console.log('Loading history for job:', job.name);
+
+            try {
+                // Load history
+                const response = await fetch(`/api/cron-jobs/${jobId}`);
+                const history = await response.json();
+                historyData[jobId] = history;
+
+                // Render history in the Run History tab
+                renderJobHistory(job, history);
+            } catch (error) {
+                console.error('Error loading job history:', error);
+                container.innerHTML = `<div class="text-red-500 text-center py-8"><i class="fas fa-exclamation-circle text-3xl mb-2"></i><p>Failed to load history: ${error.message}</p></div>`;
+            }
+        }
+
+        function renderJobHistory(job, history) {
+            const container = document.getElementById('history-container');
+
+            if (!history || !history.runs || history.runs.length === 0) {
+                container.innerHTML = `
+                    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-semibold text-white">${job.name}</h3>
+                            <span class="text-sm text-gray-400">${job.id}</span>
+                        </div>
+                        <p class="text-gray-500 text-center py-4">No run history available</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-white">${job.name}</h3>
+                        <span class="text-sm text-gray-400 font-mono">${job.id}</span>
+                    </div>
+                    
+                    <div class="bg-gray-700/50 rounded-lg p-4 mb-4">
+                        <h4 class="font-semibold text-white mb-2">Job Configuration</h4>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div><span class="text-gray-400">Schedule:</span> <span class="text-white">${formatSchedule(job.schedule)}</span></div>
+                            <div><span class="text-gray-400">Status:</span> <span class="${job.enabled ? 'text-green-400' : 'text-red-400'}">${job.enabled ? 'Active' : 'Disabled'}</span></div>
+                            <div><span class="text-gray-400">Created:</span> <span class="text-white">${new Date(job.createdAtMs).toLocaleString()}</span></div>
+                            <div><span class="text-gray-400">Last Duration:</span> <span class="text-white">${formatDuration(job.state?.lastDurationMs)}</span></div>
+                            <div><span class="text-gray-400">Total Runs:</span> <span class="text-white">${history.runs.length}</span></div>
+                        </div>
+                    </div>
+
+                    <h4 class="font-semibold text-white mb-2">Run History (${history.runs.length} runs)</h4>
+                    <div class="space-y-2 max-h-96 overflow-y-auto">
+                        ${history.runs.map(run => `
+                            <div class="bg-gray-700/50 rounded-lg p-4 border-l-4 ${run.status === 'ok' ? 'border-green-500' : 'border-red-500'}">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-sm ${run.status === 'ok' ? 'status-ok' : 'status-error'}">
+                                        <i class="fas fa-${run.status === 'ok' ? 'check-circle' : 'exclamation-circle'} mr-2"></i>
+                                        ${run.status}
+                                    </span>
+                                    <span class="text-xs text-gray-400">${new Date(run.startedAtMs).toLocaleString()}</span>
+                                </div>
+                                <div class="text-sm text-gray-400">
+                                    <div class="grid grid-cols-2 gap-2 mb-1">
+                                        <div><span class="text-gray-500">Duration:</span> <span class="text-white">${formatDuration(run.durationMs)}</span></div>
+                                        <div><span class="text-gray-500">Output:</span> <span class="text-white">${run.outputLength || 0} chars</span></div>
+                                    </div>
+                                    ${run.usage ? `
+                                    <div class="mt-2 pt-2 border-t border-gray-600">
+                                        <span class="text-purple-400"><i class="fas fa-chart-line mr-1"></i>Token Usage: ${run.usage.total_tokens?.toLocaleString() || 'N/A'}</span>
+                                        <span class="text-xs text-gray-500">(Input: ${run.usage.input_tokens || 0} | Output: ${run.usage.output_tokens || 0})</span>
+                                    </div>
+                                    ` : ''}
+                                    ${run.summary ? `
+                                    <div class="mt-2 pt-2 border-t border-gray-600">
+                                        <p class="text-sm text-gray-400"><span class="text-gray-500">Summary:</span> ${run.summary.substring(0, 200)}${run.summary.length > 200 ? '...' : ''}</p>
+                                    </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('job-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        // Close modal on outside click
+        document.getElementById('job-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'job-modal') closeModal();
+        });
+
+        // Load initial data
+        loadAllData();
+    </script>
+</body>
+</html>
