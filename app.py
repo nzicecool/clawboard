@@ -631,4 +631,4 @@ def api_token_usage_detail(job_id, date):
 
 if __name__ == '__main__':
     # Run on all interfaces, port 5000
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)
