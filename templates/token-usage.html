@@ -593,34 +593,23 @@
                             let displayTime = 'N/A';
                             let displayDateTime = 'N/A';
 
-                            try {
-                                // Try to parse timestamp (in milliseconds)
-                                const timestamp = entry.timestamp;
-                                if (timestamp && !isNaN(timestamp)) {
-                                    const date = new Date(timestamp);
-                                    // Check if date is valid
-                                    if (!isNaN(date.getTime())) {
-                                        displayTime = date.toLocaleTimeString();
-                                        displayDateTime = date.toLocaleString();
-                                    }
+                            if (entry.timestamp && !isNaN(entry.timestamp)) {
+                                const date = new Date(entry.timestamp);
+                                if (!isNaN(date.getTime())) {
+                                    displayTime = date.toLocaleTimeString();
+                                    displayDateTime = date.toLocaleString();
                                 }
-
-                                // Fallback to datetime string if timestamp parsing failed
-                                if (displayTime === 'N/A' && entry.datetime) {
-                                    try {
-                                        const isoDate = new Date(entry.datetime);
-                                        if (!isNaN(isoDate.getTime())) {
-                                            displayTime = isoDate.toLocaleTimeString();
-                                            displayDateTime = isoDate.toLocaleString();
-                                        }
-                                    } catch (e) {
-                                        displayTime = 'Parse Error';
-                                        displayDateTime = 'Parse Error';
+                            } else if (entry.datetime) {
+                                try {
+                                    const isoDate = new Date(entry.datetime);
+                                    if (!isNaN(isoDate.getTime())) {
+                                        displayTime = isoDate.toLocaleTimeString();
+                                        displayDateTime = isoDate.toLocaleString();
                                     }
+                                } catch (e) {
+                                    displayTime = 'Parse Error';
+                                    displayDateTime = 'Parse Error';
                                 }
-                            } catch (e) {
-                                displayTime = 'Error';
-                                displayDateTime = 'Error';
                             }
 
                             return `
