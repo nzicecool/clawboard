@@ -97,6 +97,19 @@
                     </div>
                 </div>
             </div>
+
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">Older Than Week</p>
+                        <p id="older-than-week-tokens" class="text-3xl font-bold text-white">-</p>
+                        <p id="older-than-week-runs" class="text-xs text-gray-500 mt-1">Runs: -</p>
+                    </div>
+                    <div class="bg-red-500/20 p-3 rounded-lg">
+                        <i class="fas fa-history text-red-400 text-xl"></i>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Charts Section -->
@@ -264,6 +277,10 @@
             const week = tokenUsageData.by_day.week;
             document.getElementById('week-tokens').textContent = formatNumber(week.total_tokens);
             document.getElementById('week-runs').textContent = 'Runs: ' + week.runs;
+
+            const olderThanWeek = tokenUsageData.by_day.older_than_week;
+            document.getElementById('older-than-week-tokens').textContent = formatNumber(olderThanWeek.total_tokens);
+            document.getElementById('older-than-week-runs').textContent = 'Runs: ' + olderThanWeek.runs;
 
             const cost = total.estimated_cost || 0;
             document.getElementById('estimated-cost').textContent = '$' + cost.toFixed(4);
