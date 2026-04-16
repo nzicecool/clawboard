@@ -36,10 +36,20 @@ def save_token_data(job_id, job_name, input_tokens, output_tokens, total_tokens,
             except (json.JSONDecodeError, IOError):
                 existing_data = []
 
+        # Check for duplicates (same job_id and timestamp)
+        is_duplicate = any(
+            entry['job_id'] == job_id and entry['timestamp'] == run_at_ms
+            for entry in existing_data
+        )
+
+        # Skip if duplicate
+        if is_duplicate:
+            return True
+
         # Add new entry
         new_entry = {
             'timestamp': run_at_ms,
-            'datetime': datetime.fromtimestamp(run_at_ms / 1000).isoformat(),
+            'datetime': datetime.fromtimestamp(run_at_ms / 1000).strftime('%Y-%m-%dT%H:%M:%S'),
             'job_id': job_id,
             'job_name': job_name,
             'input_tokens': input_tokens,
@@ -369,7 +379,7 @@ def api_token_usage():
             'by_day': {
                 'today': {'total_tokens': 0, 'input_tokens': 0, 'output_tokens': 0, 'runs': 0},
                 'week': {'total_tokens': 0, 'input_tokens': 0, 'output_tokens': 0, 'runs': 0},
-                'month': {'total_tokens': 0, 'input_tokens': 0, 'output_tokens': 0, 'runs': 0}
+                'older_than_week': {'total_tokens': 0, 'input_tokens': 0, 'output_tokens': 0, 'runs': 0}
             },
             'daily_trends': []
         }
@@ -485,27 +495,27 @@ def api_token_usage():
                             
                             # Time-based aggregations
                             time_diff = now_ms - run_at
-                            
+
                             # Today (last 24 hours)
                             if time_diff < day_ms:
                                 usage_data['by_day']['today']['total_tokens'] += total_tokens
                                 usage_data['by_day']['today']['input_tokens'] += input_tokens
                                 usage_data['by_day']['today']['output_tokens'] += output_tokens
                                 usage_data['by_day']['today']['runs'] += 1
-                            
-                            # Week (last 7 days)
+
+                            # Week (last 7 days, cumulative with today)
                             if time_diff < day_ms * 7:
                                 usage_data['by_day']['week']['total_tokens'] += total_tokens
                                 usage_data['by_day']['week']['input_tokens'] += input_tokens
                                 usage_data['by_day']['week']['output_tokens'] += output_tokens
                                 usage_data['by_day']['week']['runs'] += 1
-                            
-                            # Month (last 30 days)
-                            if time_diff < day_ms * 30:
-                                usage_data['by_day']['month']['total_tokens'] += total_tokens
-                                usage_data['by_day']['month']['input_tokens'] += input_tokens
-                                usage_data['by_day']['month']['output_tokens'] += output_tokens
-                                usage_data['by_day']['month']['runs'] += 1
+
+                            # Older than a week (distinct time bucket)
+                            if time_diff >= day_ms * 7:
+                                usage_data['by_day']['older_than_week']['total_tokens'] += total_tokens
+                                usage_data['by_day']['older_than_week']['input_tokens'] += input_tokens
+                                usage_data['by_day']['older_than_week']['output_tokens'] += output_tokens
+                                usage_data['by_day']['older_than_week']['runs'] += 1
                             
                         except json.JSONDecodeError:
                             continue
