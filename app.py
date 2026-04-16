@@ -18,6 +18,74 @@ SKILLS_DIR = f"{WORKSPACE}/skills"
 CRON_JOBS_FILE = f"{OPENCLAW_DIR}/cron/jobs.json"
 CRON_RUNS_DIR = f"{OPENCLAW_DIR}/cron/runs"
 AGENTS_DIR = f"{OPENCLAW_DIR}/agents"
+TOKEN_DATA_DIR = '/media/pi/F53E-517D1/tokens'
+
+def save_token_data(job_id, job_name, input_tokens, output_tokens, total_tokens, run_at_ms):
+    """Save token data to daily JSON file"""
+    try:
+        run_date = datetime.fromtimestamp(run_at_ms / 1000).date()
+        date_str = run_date.strftime('%Y-%m-%d')
+        filename = os.path.join(TOKEN_DATA_DIR, f'tokens-{date_str}.json')
+
+        # Load existing data for this date
+        existing_data = []
+        if os.path.exists(filename):
+            try:
+                with open(filename, 'r') as f:
+                    existing_data = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                existing_data = []
+
+        # Add new entry
+        new_entry = {
+            'timestamp': run_at_ms,
+            'datetime': datetime.fromtimestamp(run_at_ms / 1000).isoformat(),
+            'job_id': job_id,
+            'job_name': job_name,
+            'input_tokens': input_tokens,
+            'output_tokens': output_tokens,
+            'total_tokens': total_tokens
+        }
+
+        existing_data.append(new_entry)
+
+        # Save to file
+        with open(filename, 'w') as f:
+            json.dump(existing_data, f, indent=2)
+
+        return True
+    except Exception as e:
+        print(f"Error saving token data: {e}")
+        return False
+
+def cleanup_old_token_files():
+    """Remove token files older than 7 days"""
+    try:
+        if not os.path.exists(TOKEN_DATA_DIR):
+            return
+
+        now = datetime.now()
+        cutoff_date = now - timedelta(days=7)
+
+        for filename in os.listdir(TOKEN_DATA_DIR):
+            if not filename.startswith('tokens-') or not filename.endswith('.json'):
+                continue
+
+            filepath = os.path.join(TOKEN_DATA_DIR, filename)
+            # Extract date from filename
+            try:
+                date_str = filename.replace('tokens-', '').replace('.json', '')
+                file_date = datetime.strptime(date_str, '%Y-%m-%d')
+
+                # Remove if older than 7 days
+                if file_date < cutoff_date:
+                    os.remove(filepath)
+                    print(f"Removed old token file: {filename}")
+            except ValueError:
+                # Invalid date format, skip
+                continue
+    except Exception as e:
+        print(f"Error cleaning up token files: {e}")
 
 def run_openclaw_command(args):
     """Run OpenClaw CLI commands and return JSON output"""
@@ -275,10 +343,13 @@ def api_running_jobs():
 def api_token_usage():
     """Get aggregated token usage data"""
     try:
+        # Cleanup old token files (older than 7 days)
+        cleanup_old_token_files()
+
         # Load cron jobs
         with open(CRON_JOBS_FILE, 'r') as f:
             jobs_data = json.load(f)
-        
+
         now_ms = int(datetime.now().timestamp() * 1000)
         day_ms = 86400000  # 24 hours in milliseconds
         
@@ -340,11 +411,17 @@ def api_token_usage():
                             output_tokens = usage.get('output_tokens', 0)
                             model = run.get('model', 'unknown')
                             provider = run.get('provider', 'unknown')
-                            
+
                             # Skip runs with zero tokens
                             if total_tokens == 0:
                                 continue
-                            
+
+                            # Save token data to disk (today's runs only)
+                            time_diff = now_ms - run_at
+                            day_ms = 86400000  # 24 hours
+                            if time_diff < day_ms:
+                                save_token_data(job_id, job_name, input_tokens, output_tokens, total_tokens, run_at)
+
                             # Total aggregations
                             usage_data['total']['total_tokens'] += total_tokens
                             usage_data['total']['input_tokens'] += input_tokens
@@ -523,6 +600,34 @@ def duration_filter(ms):
     minutes = int(seconds // 60)
     secs = int(seconds % 60)
     return f'{minutes}m {secs}s'
+
+@app.route('/api/token-usage/<job_id>/<date>')
+def api_token_usage_detail(job_id, date):
+    """Get token usage details for a specific job on a specific date"""
+    try:
+        filename = os.path.join(TOKEN_DATA_DIR, f'tokens-{date}.json')
+
+        if not os.path.exists(filename):
+            return jsonify({'error': 'No token data for this date', 'entries': []})
+
+        with open(filename, 'r') as f:
+            all_entries = json.load(f)
+
+        # Filter by job_id
+        job_entries = [entry for entry in all_entries if entry['job_id'] == job_id]
+
+        # Sort by timestamp descending (newest first)
+        job_entries.sort(key=lambda x: x['timestamp'], reverse=True)
+
+        return jsonify({
+            'job_id': job_id,
+            'date': date,
+            'entries': job_entries,
+            'total_entries': len(job_entries)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e), 'entries': []})
 
 if __name__ == '__main__':
     # Run on all interfaces, port 5000
