@@ -19,9 +19,73 @@ CRON_JOBS_FILE = f"{OPENCLAW_DIR}/cron/jobs.json"
 CRON_RUNS_DIR = f"{OPENCLAW_DIR}/cron/runs"
 AGENTS_DIR = f"{OPENCLAW_DIR}/agents"
 TOKEN_DATA_DIR = '/media/pi/F53E-517D1/tokens'
+SESSIONS_DIR = f"{OPENCLAW_DIR}/agents/main/sessions"
 
-def save_token_data(job_id, job_name, input_tokens, output_tokens, total_tokens, run_at_ms):
-    """Save token data to daily JSON file"""
+def extract_session_text(session_id):
+    """Extract input and output text from a session file"""
+    try:
+        session_file = os.path.join(SESSIONS_DIR, f'{session_id}.jsonl')
+        if not os.path.exists(session_file):
+            return {'input_text': None, 'output_text': None, 'session_key': None}
+
+        input_text = None
+        output_text = None
+        session_key = None
+
+        with open(session_file, 'r') as f:
+            for line in f:
+                try:
+                    entry = json.loads(line.strip())
+                    if entry.get('type') == 'session':
+                        session_key = entry.get('id')
+                    elif entry.get('type') == 'message':
+                        message = entry.get('message', {})
+                        if not input_text and message.get('role') == 'user':
+                            # Extract text from user message
+                            content = message.get('content', [])
+                            if content and isinstance(content, list) and len(content) > 0:
+                                text_parts = []
+                                for item in content:
+                                    if isinstance(item, dict) and item.get('type') == 'text':
+                                        text = item.get('text', '')
+                                        if text:
+                                            text_parts.append(text)
+                                input_text = '\n\n'.join(text_parts) if text_parts else None
+                        elif not output_text and message.get('role') == 'assistant' and input_text:
+                            # Extract text from assistant response
+                            content = message.get('content', [])
+                            if content and isinstance(content, list) and len(content) > 0:
+                                text_parts = []
+                                for item in content:
+                                    if isinstance(item, dict) and item.get('type') == 'text':
+                                        text = item.get('text', '')
+                                        if text:
+                                            text_parts.append(text)
+                                output_text = '\n\n'.join(text_parts) if text_parts else None
+                                # Break after getting output
+                                break
+                except json.JSONDecodeError:
+                    continue
+
+        return {
+            'input_text': truncate_text(input_text, 1000),
+            'output_text': truncate_text(output_text, 1000),
+            'session_key': session_key
+        }
+    except Exception as e:
+        print(f"Error extracting session text: {e}")
+        return {'input_text': None, 'output_text': None, 'session_key': None}
+
+def truncate_text(text, max_length):
+    """Truncate text to max_length and add ellipsis if needed"""
+    if not text:
+        return None
+    if len(text) <= max_length:
+        return text
+    return text[:max_length] + '... [truncated]'
+
+def save_token_data(job_id, job_name, input_tokens, output_tokens, total_tokens, run_at_ms, session_id=None):
+    """Save token data to daily JSON file with optional session text"""
     try:
         run_date = datetime.fromtimestamp(run_at_ms / 1000).date()
         date_str = run_date.strftime('%Y-%m-%d')
@@ -46,6 +110,11 @@ def save_token_data(job_id, job_name, input_tokens, output_tokens, total_tokens,
         if is_duplicate:
             return True
 
+        # Extract session text if session_id provided
+        session_info = {}
+        if session_id:
+            session_info = extract_session_text(session_id)
+
         # Add new entry
         new_entry = {
             'timestamp': run_at_ms,
@@ -54,7 +123,11 @@ def save_token_data(job_id, job_name, input_tokens, output_tokens, total_tokens,
             'job_name': job_name,
             'input_tokens': input_tokens,
             'output_tokens': output_tokens,
-            'total_tokens': total_tokens
+            'total_tokens': total_tokens,
+            'session_id': session_id,
+            'session_key': session_info.get('session_key'),
+            'input_text': session_info.get('input_text'),
+            'output_text': session_info.get('output_text')
         }
 
         existing_data.append(new_entry)
@@ -430,7 +503,8 @@ def api_token_usage():
                             time_diff = now_ms - run_at
                             day_ms = 86400000  # 24 hours
                             if time_diff < day_ms:
-                                save_token_data(job_id, job_name, input_tokens, output_tokens, total_tokens, run_at)
+                                session_id = run.get('sessionId')
+                                save_token_data(job_id, job_name, input_tokens, output_tokens, total_tokens, run_at, session_id)
 
                             # Total aggregations
                             usage_data['total']['total_tokens'] += total_tokens
