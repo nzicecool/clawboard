@@ -1,0 +1,11 @@
+theme: jekyll:minima
+title: ClawBoard
+description: Observability dashboard for OpenClaw AI agents
+markdown: GFM
+defaults:
+  -
+    scope:
+      path: ""
+      type: "pages"
+    values:
+      layout: default
