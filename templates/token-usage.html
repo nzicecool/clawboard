@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Token Usage - OpenClaw Dashboard</title>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .card {
+            transition: all 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+        .refresh-spin {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-8">
+            <div>
+                <a href="/" class="no-underline">
+                    <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent hover:scale-105 transition-transform cursor-pointer">
+                        <i class="fas fa-chart-line mr-2"></i>Token Usage Dashboard
+                    </h1>
+                    <p class="text-gray-400 mt-1">Track AI agent token consumption and costs</p>
+                </a>
+            </div>
+            <div class="flex items-center gap-4">
+                <a href="/health" class="text-sm text-green-400 hover:text-green-300"><i class="fas fa-shield-halved mr-1"></i>Health</a>
+                <a href="/" class="text-sm text-gray-400 hover:text-gray-300"><i class="fas fa-home mr-1"></i>Dashboard</a>
+            </div>
+            <div class="flex items-center gap-4">
+                <span id="last-updated" class="text-sm text-gray-500"></span>
+                <button onclick="loadTokenUsage()" id="refresh-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">Total Tokens</p>
+                        <p id="total-tokens" class="text-3xl font-bold text-white">-</p>
+                        <p id="total-runs" class="text-xs text-gray-500 mt-1">Runs: -</p>
+                    </div>
+                    <div class="bg-purple-500/20 p-3 rounded-lg">
+                        <i class="fas fa-coins text-purple-400 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">Today</p>
+                        <p id="today-tokens" class="text-3xl font-bold text-white">-</p>
+                        <p id="today-runs" class="text-xs text-gray-500 mt-1">Runs: -</p>
+                    </div>
+                    <div class="bg-green-500/20 p-3 rounded-lg">
+                        <i class="fas fa-calendar-day text-green-400 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">This Week</p>
+                        <p id="week-tokens" class="text-3xl font-bold text-white">-</p>
+                        <p id="week-runs" class="text-xs text-gray-500 mt-1">Runs: -</p>
+                    </div>
+                    <div class="bg-blue-500/20 p-3 rounded-lg">
+                        <i class="fas fa-calendar-week text-blue-400 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">Interactive Usage</p>
+                        <p id="interactive-tokens" class="text-3xl font-bold text-white">-</p>
+                        <p id="interactive-runs" class="text-xs text-gray-500 mt-1">Runs: -</p>
+                    </div>
+                    <div class="bg-cyan-500/20 p-3 rounded-lg">
+                        <i class="fas fa-comments text-cyan-400 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">Est. Cost</p>
+                        <p id="estimated-cost" class="text-3xl font-bold text-white">-</p>
+                        <p class="text-xs text-gray-500 mt-1">Based on token usage</p>
+                    </div>
+                    <div class="bg-yellow-500/20 p-3 rounded-lg">
+                        <i class="fas fa-dollar-sign text-yellow-400 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">Older Than Week</p>
+                        <p id="older-than-week-tokens" class="text-3xl font-bold text-white">-</p>
+                        <p id="older-than-week-runs" class="text-xs text-gray-500 mt-1">Runs: -</p>
+                    </div>
+                    <div class="bg-red-500/20 p-3 rounded-lg">
+                        <i class="fas fa-history text-red-400 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <!-- Daily Trends Chart -->
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <h3 class="text-lg font-semibold text-white mb-4">
+                    <i class="fas fa-chart-area mr-2 text-blue-400"></i>Daily Token Usage Trends
+                </h3>
+                <div class="h-80">
+                    <canvas id="dailyTrendsChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Model Distribution Chart -->
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <h3 class="text-lg font-semibold text-white mb-4">
+                    <i class="fas fa-chart-pie mr-2 text-purple-400"></i>Model Usage Distribution
+                </h3>
+                <div class="h-80">
+                    <canvas id="modelDistributionChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input vs Output Chart -->
+        <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700 mb-8">
+            <h3 class="text-lg font-semibold text-white mb-4">
+                <i class="fas fa-chart-bar mr-2 text-green-400"></i>Input vs Output Tokens (Daily)
+            </h3>
+            <div class="h-80">
+                <canvas id="inputOutputChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Per-Job Breakdown -->
+        <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700 mb-8">
+            <h3 class="text-lg font-semibold text-white mb-4">
+                <i class="fas fa-list mr-2 text-blue-400"></i>Token Usage by Job
+            </h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-gray-700">
+                            <th class="text-left py-3 px-4 text-gray-400 font-medium">Job</th>
+                            <th class="text-right py-3 px-4 text-gray-400 font-medium">Total Tokens</th>
+                            <th class="text-right py-3 px-4 text-gray-400 font-medium">Input</th>
+                            <th class="text-right py-3 px-4 text-gray-400 font-medium">Output</th>
+                            <th class="text-right py-3 px-4 text-gray-400 font-medium">Runs</th>
+                            <th class="text-right py-3 px-4 text-gray-400 font-medium">Avg/Run</th>
+                        </tr>
+                    </thead>
+                    <tbody id="job-breakdown">
+                        <tr>
+                            <td colspan="6" class="text-center py-8 text-gray-500">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Model Breakdown Details -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Model Stats -->
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <h3 class="text-lg font-semibold text-white mb-4">
+                    <i class="fas fa-brain mr-2 text-purple-400"></i>Model Statistics
+                </h3>
+                <div id="model-stats" class="space-y-3">
+                    <p class="text-gray-500 text-center py-4">Loading...</p>
+                </div>
+            </div>
+
+            <!-- Provider Stats -->
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <h3 class="text-lg font-semibold text-white mb-4">
+                    <i class="fas fa-cloud mr-2 text-blue-400"></i>Provider Statistics
+                </h3>
+                <div id="provider-stats" class="space-y-3">
+                    <p class="text-gray-500 text-center py-4">Loading...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Session Category Breakdown -->
+        <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700 mb-8 mt-6">
+            <h3 class="text-lg font-semibold text-white mb-4">
+                <i class="fas fa-layer-group mr-2 text-cyan-400"></i>Token Usage by Session Type
+            </h3>
+            <div id="category-breakdown" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <p class="text-gray-500 text-center py-4 col-span-4">Loading...</p>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="mt-8 text-center text-gray-500 text-sm">
+            <p>Token usage data from cron job run history and interactive session trajectories. Costs are estimates.</p>
+        </div>
+    </div>
+
+    <!-- Token Details Modal -->
+    <div id="token-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden">
+            <div class="flex items-center justify-between p-6 border-b border-gray-700">
+                <div>
+                    <h3 id="modal-job-name" class="text-xl font-bold text-white">Job Details</h3>
+                    <p id="modal-date" class="text-sm text-gray-400 mt-1"></p>
+                </div>
+                <button onclick="closeTokenModal()" class="text-gray-400 hover:text-white transition">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+            <div id="modal-content" class="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+                <p class="text-center text-gray-500 py-8">Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let dailyTrendsChart = null;
+        let modelDistributionChart = null;
+        let inputOutputChart = null;
+        let tokenUsageData = null;
+
+        async function loadTokenUsage() {
+            console.log('Starting token usage load...');
+            const btn = document.getElementById('refresh-btn');
+            btn.classList.add('opacity-50');
+            btn.querySelector('i').classList.add('refresh-spin');
+
+            try {
+                console.log('Fetching API...');
+                const response = await fetch('/api/token-usage');
+                console.log('Response received:', response.status);
+                tokenUsageData = await response.json();
+                console.log('Data loaded:', tokenUsageData);
+
+                if (tokenUsageData.error) {
+                    throw new Error(tokenUsageData.error);
+                }
+
+                console.log('Rendering summary cards...');
+                updateSummaryCards();
+                console.log('Rendering charts...');
+                renderCharts();
+                console.log('Rendering job breakdown...');
+                renderJobBreakdown();
+                console.log('Rendering model stats...');
+                renderModelStats();
+                console.log('Rendering provider stats...');
+                renderProviderStats();
+                console.log('Rendering category breakdown...');
+                renderCategoryBreakdown();
+
+                document.getElementById('last-updated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+                console.log('Load complete');
+            } catch (error) {
+                console.error('Error loading token usage:', error);
+                document.getElementById('total-tokens').textContent = 'Error: ' + error.message;
+                alert('Error loading token usage: ' + error.message);
+            } finally {
+                btn.classList.remove('opacity-50');
+                btn.querySelector('i').classList.remove('refresh-spin');
+            }
+        }
+
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return num.toLocaleString();
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function updateSummaryCards() {
+            const total = tokenUsageData.total;
+
+            document.getElementById('total-tokens').textContent = formatNumber(total.total_tokens);
+            document.getElementById('total-runs').textContent = 'Runs: ' + total.total_runs.toLocaleString();
+
+            const today = tokenUsageData.by_day.today;
+            document.getElementById('today-tokens').textContent = formatNumber(today.total_tokens);
+            document.getElementById('today-runs').textContent = 'Runs: ' + today.runs;
+
+            const week = tokenUsageData.by_day.week;
+            document.getElementById('week-tokens').textContent = formatNumber(week.total_tokens);
+            document.getElementById('week-runs').textContent = 'Runs: ' + week.runs;
+
+            const olderThanWeek = tokenUsageData.by_day.older_than_week;
+            document.getElementById('older-than-week-tokens').textContent = formatNumber(olderThanWeek.total_tokens);
+            document.getElementById('older-than-week-runs').textContent = 'Runs: ' + olderThanWeek.runs;
+
+            // Interactive usage (WhatsApp, subagents, main session)
+            const interactive = tokenUsageData.interactive_total || {total_tokens: 0, runs: 0};
+            document.getElementById('interactive-tokens').textContent = formatNumber(interactive.total_tokens);
+            document.getElementById('interactive-runs').textContent = 'Runs: ' + interactive.runs;
+
+            const cost = total.estimated_cost || 0;
+            document.getElementById('estimated-cost').textContent = '$' + cost.toFixed(4);
+        }
+
+        function renderCharts() {
+            // Daily Trends Chart
+            const trendsCtx = document.getElementById('dailyTrendsChart').getContext('2d');
+            
+            if (dailyTrendsChart) {
+                dailyTrendsChart.destroy();
+            }
+
+            const dailyTrends = tokenUsageData.daily_trends;
+            const labels = dailyTrends.map(d => d.date);
+            const data = dailyTrends.map(d => d.total_tokens);
+
+            dailyTrendsChart = new Chart(trendsCtx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Total Tokens',
+                        data: data,
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            },
+                            ticks: {
+                                color: '#9CA3AF',
+                                callback: function(value) {
+                                    return formatNumber(value);
+                                }
+                            }
+                        },
+                        x: {
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            },
+                            ticks: {
+                                color: '#9CA3AF',
+                                maxTicksLimit: 10
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Model Distribution Chart
+            const modelCtx = document.getElementById('modelDistributionChart').getContext('2d');
+            
+            if (modelDistributionChart) {
+                modelDistributionChart.destroy();
+            }
+
+            const models = Object.keys(tokenUsageData.by_model);
+            const modelData = models.map(m => tokenUsageData.by_model[m].total_tokens);
+
+            modelDistributionChart = new Chart(modelCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: models,
+                    datasets: [{
+                        data: modelData,
+                        backgroundColor: [
+                            'rgb(59, 130, 246)',
+                            'rgb(16, 185, 129)',
+                            'rgb(245, 158, 11)',
+                            'rgb(239, 68, 68)',
+                            'rgb(139, 92, 246)'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#9CA3AF',
+                                padding: 20
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Input vs Output Chart
+            const ioCtx = document.getElementById('inputOutputChart').getContext('2d');
+            
+            if (inputOutputChart) {
+                inputOutputChart.destroy();
+            }
+
+            inputOutputChart = new Chart(ioCtx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Input Tokens',
+                            data: dailyTrends.map(d => d.input_tokens),
+                            backgroundColor: 'rgba(16, 185, 129, 0.8)'
+                        },
+                        {
+                            label: 'Output Tokens',
+                            data: dailyTrends.map(d => d.output_tokens),
+                            backgroundColor: 'rgba(59, 130, 246, 0.8)'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#9CA3AF'
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            stacked: true,
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            },
+                            ticks: {
+                                color: '#9CA3AF',
+                                callback: function(value) {
+                                    return formatNumber(value);
+                                }
+                            }
+                        },
+                        x: {
+                            stacked: true,
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                color: '#9CA3AF',
+                                maxTicksLimit: 10
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderJobBreakdown() {
+            const container = document.getElementById('job-breakdown');
+
+            if (!tokenUsageData.by_job || tokenUsageData.by_job.length === 0) {
+                container.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-500">No usage data available</td></tr>';
+                return;
+            }
+
+            const today = new Date().toISOString().split('T')[0];
+
+            container.innerHTML = tokenUsageData.by_job.map(job => {
+                const isInteractive = job.is_interactive || job.job_id.startsWith('interactive:');
+                const rowClass = isInteractive ? 'border-l-4 border-cyan-500/50' : '';
+                const badge = isInteractive ? '<span class="inline-block bg-cyan-500/20 text-cyan-400 text-xs px-2 py-0.5 rounded-full ml-2">Interactive</span>' : '';
+                return `
+                <tr class="border-b border-gray-700 hover:bg-gray-700/50 cursor-pointer ${rowClass}" onclick="showJobTokenDetails('${job.job_id}', '${escapeHtml(job.name)}', '${today}')">
+                    <td class="py-3 px-4">
+                        <div class="font-medium text-white">${escapeHtml(job.name)}${badge}</div>
+                        <div class="text-xs text-gray-500 font-mono">${job.job_id.substring(0, 16)}...</div>
+                    </td>
+                    <td class="text-right py-3 px-4">
+                        <span class="font-semibold ${isInteractive ? 'text-cyan-300' : 'text-white'}">${formatNumber(job.total_tokens)}</span>
+                    </td>
+                    <td class="text-right py-3 px-4 text-green-400">${formatNumber(job.input_tokens)}</td>
+                    <td class="text-right py-3 px-4 text-blue-400">${formatNumber(job.output_tokens)}</td>
+                    <td class="text-right py-3 px-4 text-gray-300">${job.runs}</td>
+                    <td class="text-right py-3 px-4 text-gray-400">${formatNumber(job.avg_tokens)}</td>
+                </tr>
+            `}).join('');
+        }
+
+        function renderModelStats() {
+            const container = document.getElementById('model-stats');
+
+            if (!tokenUsageData.by_model || Object.keys(tokenUsageData.by_model).length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-center py-4">No model data available</p>';
+                return;
+            }
+
+            const totalTokens = tokenUsageData.total.total_tokens;
+
+            container.innerHTML = Object.entries(tokenUsageData.by_model).map(([model, data]) => {
+                const percentage = ((data.total_tokens / totalTokens) * 100).toFixed(1);
+                return `
+                    <div class="bg-gray-700/50 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-semibold text-white">${model}</span>
+                            <span class="text-sm text-gray-400">${percentage}%</span>
+                        </div>
+                        <div class="w-full bg-gray-600 rounded-full h-2 mb-2">
+                            <div class="bg-purple-500 h-2 rounded-full" style="width: ${percentage}%"></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-xs text-gray-400">
+                            <div>Tokens: ${formatNumber(data.total_tokens)}</div>
+                            <div>Runs: ${data.runs}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderProviderStats() {
+            const container = document.getElementById('provider-stats');
+
+            if (!tokenUsageData.by_provider || Object.keys(tokenUsageData.by_provider).length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-center py-4">No provider data available</p>';
+                return;
+            }
+
+            const totalTokens = tokenUsageData.total.total_tokens;
+
+            container.innerHTML = Object.entries(tokenUsageData.by_provider).map(([provider, data]) => {
+                const percentage = ((data.total_tokens / totalTokens) * 100).toFixed(1);
+                return `
+                    <div class="bg-gray-700/50 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-semibold text-white">${provider}</span>
+                            <span class="text-sm text-gray-400">${percentage}%</span>
+                        </div>
+                        <div class="w-full bg-gray-600 rounded-full h-2 mb-2">
+                            <div class="bg-blue-500 h-2 rounded-full" style="width: ${percentage}%"></div>
+                        </div>
+                        <div class="text-xs text-gray-400">
+                            <span>Tokens: ${formatNumber(data.total_tokens)}</span>
+                            <span class="ml-4">Runs: ${data.runs}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderCategoryBreakdown() {
+            const container = document.getElementById('category-breakdown');
+            const categories = tokenUsageData.by_category || {};
+            const catKeys = Object.keys(categories);
+
+            if (catKeys.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-center py-4 col-span-4">No interactive session data</p>';
+                return;
+            }
+
+            const colors = {
+                'WhatsApp Chat': { bg: 'bg-green-500/20', text: 'text-green-400', icon: 'fab fa-whatsapp' },
+                'Sub-Agent': { bg: 'bg-purple-500/20', text: 'text-purple-400', icon: 'fas fa-robot' },
+                'Main Session': { bg: 'bg-blue-500/20', text: 'text-blue-400', icon: 'fas fa-terminal' },
+                'Other': { bg: 'bg-gray-500/20', text: 'text-gray-400', icon: 'fas fa-question' }
+            };
+            const defaultColor = { bg: 'bg-gray-500/20', text: 'text-gray-400', icon: 'fas fa-circle' };
+
+            // Also show Scheduled Tasks total for comparison
+            const totalTokens = tokenUsageData.total.total_tokens || 1;
+            
+            container.innerHTML = catKeys.map(cat => {
+                const data = categories[cat];
+                const c = colors[cat] || defaultColor;
+                const pct = ((data.total_tokens / totalTokens) * 100).toFixed(1);
+                return `
+                    <div class="bg-gray-700/50 rounded-lg p-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i class="${c.icon} ${c.text}"></i>
+                            <span class="font-semibold text-white">${cat}</span>
+                            <span class="text-xs text-gray-400 ml-auto">${pct}%</span>
+                        </div>
+                        <div class="w-full bg-gray-600 rounded-full h-2 mb-2">
+                            <div class="${c.bg.replace('/20', '')} h-2 rounded-full" style="width: ${Math.min(pct, 100)}%"></div>
+                        </div>
+                        <div class="text-sm">
+                            <span class="text-white font-semibold">${formatNumber(data.total_tokens)}</span>
+                            <span class="text-gray-400 text-xs ml-2">tokens</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">
+                            ${data.runs} completions · in ${formatNumber(data.input_tokens)} / out ${formatNumber(data.output_tokens)}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function showJobTokenDetails(jobId, jobName, date) {
+            const modal = document.getElementById('token-modal');
+            const content = document.getElementById('modal-content');
+            const jobNameEl = document.getElementById('modal-job-name');
+            const dateEl = document.getElementById('modal-date');
+
+            // Set modal header
+            jobNameEl.textContent = jobName;
+            dateEl.textContent = `Date: ${date}`;
+
+            // Show loading state
+            content.innerHTML = '<p class="text-center text-gray-500 py-8"><i class="fas fa-spinner fa-spin text-3xl mb-4"></i><p>Loading token details...</p></div>';
+
+            // Show modal
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+
+            try {
+                const response = await fetch(`/api/token-usage/${jobId}/${date}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    content.innerHTML = `<div class="text-center py-8 text-gray-500"><i class="fas fa-exclamation-circle text-3xl mb-2"></i><p>${data.error}</p></div>`;
+                    return;
+                }
+
+                if (data.entries.length === 0) {
+                    content.innerHTML = `<div class="text-center py-8 text-gray-500"><i class="fas fa-info-circle text-3xl mb-2"></i><p>No token data available for ${date}</p></div>`;
+                    return;
+                }
+
+                // Calculate totals
+                const totalInput = data.entries.reduce((sum, e) => sum + e.input_tokens, 0);
+                const totalOutput = data.entries.reduce((sum, e) => sum + e.output_tokens, 0);
+                const totalTokens = data.entries.reduce((sum, e) => sum + e.total_tokens, 0);
+
+                // Render token details
+                content.innerHTML = `
+                    <div class="grid grid-cols-3 gap-4 mb-6">
+                        <div class="bg-gray-700/50 rounded-lg p-4 text-center">
+                            <p class="text-gray-400 text-sm">Total Input</p>
+                            <p class="text-2xl font-bold text-green-400">${formatNumber(totalInput)}</p>
+                        </div>
+                        <div class="bg-gray-700/50 rounded-lg p-4 text-center">
+                            <p class="text-gray-400 text-sm">Total Output</p>
+                            <p class="text-2xl font-bold text-blue-400">${formatNumber(totalOutput)}</p>
+                        </div>
+                        <div class="bg-gray-700/50 rounded-lg p-4 text-center">
+                            <p class="text-gray-400 text-sm">Total Tokens</p>
+                            <p class="text-2xl font-bold text-purple-400">${formatNumber(totalTokens)}</p>
+                        </div>
+                    </div>
+
+                    <h4 class="text-lg font-semibold text-white mb-4">Token Entries (${data.entries.length})</h4>
+                    <div class="space-y-3">
+                        ${data.entries.map((entry, index) => {
+                            // Parse date safely
+                            let displayTime = 'N/A';
+                            let displayDateTime = 'N/A';
+
+                            if (entry.timestamp && !isNaN(entry.timestamp)) {
+                                const date = new Date(entry.timestamp);
+                                if (!isNaN(date.getTime())) {
+                                    displayTime = date.toLocaleTimeString();
+                                    displayDateTime = date.toLocaleString();
+                                }
+                            } else if (entry.datetime) {
+                                try {
+                                    const isoDate = new Date(entry.datetime);
+                                    if (!isNaN(isoDate.getTime())) {
+                                        displayTime = isoDate.toLocaleTimeString();
+                                        displayDateTime = isoDate.toLocaleString();
+                                    }
+                                } catch (e) {
+                                    displayTime = 'Parse Error';
+                                    displayDateTime = 'Parse Error';
+                                }
+                            }
+
+                            return `
+                            <div class="bg-gray-700/50 rounded-lg p-4 border-l-4 ${index === 0 ? 'border-green-500' : 'border-gray-600'}">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-sm text-gray-400">${displayTime}</span>
+                                    <span class="text-sm text-gray-400">${displayDateTime}</span>
+                                </div>
+                                <div class="grid grid-cols-3 gap-4 text-sm mb-3">
+                                    <div>
+                                        <p class="text-gray-500">Input Tokens</p>
+                                        <p class="text-green-400 font-semibold">${formatNumber(entry.input_tokens)}</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-gray-500">Output Tokens</p>
+                                        <p class="text-blue-400 font-semibold">${formatNumber(entry.output_tokens)}</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-gray-500">Total Tokens</p>
+                                        <p class="text-purple-400 font-semibold">${formatNumber(entry.total_tokens)}</p>
+                                    </div>
+                                </div>
+                                ${(entry.input_text && entry.input_text.length > 0) || (entry.output_text && entry.output_text.length > 0) ? `
+                                <div class="mt-3 border-t border-gray-600 pt-3">
+                                    ${entry.input_text && entry.input_text.length > 0 ? `
+                                    <div class="mb-2">
+                                        <p class="text-xs text-gray-500 mb-1"><i class="fas fa-arrow-right mr-1"></i>Input (truncated to 1000 chars):</p>
+                                        <div class="bg-gray-800 rounded p-2 text-xs text-gray-300 font-mono whitespace-pre-wrap break-words max-h-32 overflow-y-auto">${escapeHtml(entry.input_text)}</div>
+                                    </div>
+                                    ` : ''}
+                                    ${entry.output_text && entry.output_text.length > 0 ? `
+                                    <div>
+                                        <p class="text-xs text-gray-500 mb-1"><i class="fas fa-arrow-left mr-1"></i>Output (truncated to 1000 chars):</p>
+                                        <div class="bg-gray-800 rounded p-2 text-xs text-gray-300 font-mono whitespace-pre-wrap break-words max-h-32 overflow-y-auto">${escapeHtml(entry.output_text)}</div>
+                                    </div>
+                                    ` : ''}
+                                </div>
+                                ` : ''}
+                            </div>
+                        `}).join('')}
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error loading token details:', error);
+                content.innerHTML = `<div class="text-center py-8 text-red-500"><i class="fas fa-exclamation-triangle text-3xl mb-2"></i><p>Failed to load details: ${error.message}</p></div>`;
+            }
+        }
+
+        function closeTokenModal() {
+            const modal = document.getElementById('token-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        // Close modal on outside click
+        document.getElementById('token-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'token-modal') closeTokenModal();
+        });
+
+        // Load initial data
+        loadTokenUsage();
+    </script>
+</body>
