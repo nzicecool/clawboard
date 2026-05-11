@@ -35,10 +35,14 @@
     "empty_result_window_days": 7,
     "empty_result_threshold_pct": 80
   },
+  "storage": {
+    "warning_threshold_pct": 20,
+    "critical_threshold_pct": 10
+  },
   "alerts": {
     "whatsapp": true,
-    "email": "your-email@example.com",
-    "email_from": "ClawBoard Alerts <alerts@yourdomain.com>",
+    "email": "kanchanaw@senathltd.com",
+    "email_from": "K3a Guardrail <notifications@zined.lk>",
     "cooldown_minutes": 120,
     "severities_to_alert": [
       "critical",

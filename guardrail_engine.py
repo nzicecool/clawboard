@@ -516,6 +516,46 @@ class GuardrailEngine:
 
         return new_count
 
+    # --- Storage ---
+    def check_storage(self):
+        import shutil
+        cfg = self.config.get('storage', {})
+        warn_pct = cfg.get('warning_threshold_pct', 20)
+        crit_pct = cfg.get('critical_threshold_pct', 10)
+
+        # Check root filesystem
+        usage = shutil.disk_usage('/')
+        total_gb = round(usage.total / (1024**3), 1)
+        used_gb = round(usage.used / (1024**3), 1)
+        free_gb = round(usage.free / (1024**3), 1)
+        used_pct = round((usage.used / usage.total) * 100, 1)
+        avail_pct = round(100 - used_pct, 1)
+
+        status = 'green'
+        if avail_pct <= crit_pct:
+            status = 'red'
+            self._add_alert('critical', 'storage',
+                'Storage Critical',
+                f'Only {avail_pct}% storage remaining ({free_gb}GB free of {total_gb}GB)',
+                metadata={'avail_pct': avail_pct, 'free_gb': free_gb, 'total_gb': total_gb})
+        elif avail_pct <= warn_pct:
+            status = 'amber'
+            self._add_alert('warning', 'storage',
+                'Storage Warning',
+                f'Storage below {warn_pct}% — {avail_pct}% remaining ({free_gb}GB free of {total_gb}GB)',
+                metadata={'avail_pct': avail_pct, 'free_gb': free_gb, 'total_gb': total_gb})
+
+        self.checks['storage'] = {
+            'status': status,
+            'total_gb': total_gb,
+            'used_gb': used_gb,
+            'free_gb': free_gb,
+            'used_pct': used_pct,
+            'avail_pct': avail_pct,
+            'warning_threshold_pct': warn_pct,
+            'critical_threshold_pct': crit_pct
+        }
+
     # --- Main Entry ---
     def run_all(self):
         self.check_budget()
@@ -524,6 +564,7 @@ class GuardrailEngine:
         self.check_duration()
         self.check_cache_efficiency()
         self.check_empty_results()
+        self.check_storage()
         self.compute_health()
         new_alerts = self.save_results()
         return self.health, self.alerts, new_alerts

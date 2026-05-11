@@ -119,6 +119,16 @@
                     <p class="text-gray-500">Loading...</p>
                 </div>
             </div>
+
+            <div class="card bg-gray-800 rounded-xl p-5 border border-gray-700" id="check-storage">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-semibold text-white"><i class="fas fa-hard-drive mr-2 text-cyan-400"></i>Storage</h3>
+                    <span id="storage-badge" class="text-xs px-2 py-1 rounded-full">-</span>
+                </div>
+                <div id="storage-details" class="space-y-2 text-sm">
+                    <p class="text-gray-500">Loading...</p>
+                </div>
+            </div>
         </div>
 
         <!-- Alert Feed & Budget Chart -->
@@ -362,6 +372,21 @@
             ).join('');
             document.getElementById('quality-details').innerHTML = emptyList || `
                 <div class="text-green-400"><i class="fas fa-check-circle mr-1"></i>All agents returning results</div>
+            `;
+
+            // Storage
+            const storage = checks.storage || {};
+            document.getElementById('storage-badge').outerHTML = statusBadge(storage.status);
+            const availColor = storage.avail_pct <= 10 ? 'text-red-400' : storage.avail_pct <= 20 ? 'text-yellow-400' : 'text-green-400';
+            const barColor = storage.used_pct >= 90 ? 'bg-red-500' : storage.used_pct >= 80 ? 'bg-yellow-500' : 'bg-green-500';
+            document.getElementById('storage-details').innerHTML = `
+                <div class="flex justify-between"><span class="text-gray-400">Total</span><span class="text-gray-300">${storage.total_gb || '-'}GB</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Used</span><span class="font-semibold text-white">${storage.used_gb || '-'}GB (${storage.used_pct || '-'}%)</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Available</span><span class="font-semibold ${availColor}">${storage.free_gb || '-'}GB (${storage.avail_pct || '-'}%)</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Alert at</span><span class="text-gray-300">< ${storage.warning_threshold_pct || 20}% free</span></div>
+                <div class="mt-2 w-full bg-gray-700 rounded-full h-2">
+                    <div class="h-2 rounded-full ${barColor}" style="width: ${storage.used_pct || 0}%"></div>
+                </div>
             `;
         }
 

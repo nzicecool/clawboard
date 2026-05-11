@@ -343,11 +343,12 @@ def cleanup_old_token_files():
     except Exception as e:
         print(f"Error cleaning up token data: {e}")
 
-def run_openclaw_command(args):
+def run_openclaw_command(args, timeout=10):
     """Run OpenClaw CLI commands and return JSON output"""
-    cmd = ['openclaw'] + args
+    openclaw_bin = os.path.expanduser('~/.npm-global/bin/openclaw')
+    cmd = [openclaw_bin] + args
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         if result.returncode == 0:
             try:
                 return json.loads(result.stdout)
@@ -357,6 +358,20 @@ def run_openclaw_command(args):
             return {'error': result.stderr, 'stdout': result.stdout}
     except subprocess.TimeoutExpired:
         return {'error': 'Command timed out'}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+import urllib.request
+
+def gateway_api(path, timeout=5):
+    """Call the OpenClaw gateway API directly (faster than CLI)"""
+    gateway_port = 18789
+    url = f'http://127.0.0.1:{gateway_port}{path}'
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode())
     except Exception as e:
         return {'error': str(e)}
 
@@ -477,14 +492,47 @@ def api_skill_detail(skill_name):
 @app.route('/api/status')
 def api_status():
     """Get OpenClaw system status"""
-    result = run_openclaw_command(['status'])
-    return jsonify(result)
+    # Fast health check via gateway
+    try:
+        import urllib.request
+        with urllib.request.urlopen('http://127.0.0.1:18789/health', timeout=3) as resp:
+            health = json.loads(resp.read().decode())
+        return jsonify({
+            'status': 'online' if health.get('ok') else 'degraded',
+            'health': health,
+            'version': openclaw_version()
+        })
+    except Exception as e:
+        return jsonify({'status': 'unknown', 'error': str(e)})
 
 @app.route('/api/sessions')
 def api_sessions():
-    """Get list of sessions"""
-    result = run_openclaw_command(['sessions', 'action=list'])
+    """Get list of sessions via gateway API"""
+    result = gateway_api('/v1/sessions')
+    if 'error' in result:
+        # Try listing session dirs as fallback
+        try:
+            sessions = []
+            agents_dir = os.path.expanduser('~/.openclaw/agents/main/sessions')
+            if os.path.isdir(agents_dir):
+                for d in os.listdir(agents_dir):
+                    p = os.path.join(agents_dir, d)
+                    if os.path.isdir(p):
+                        sessions.append({'id': d, 'path': p})
+            return jsonify({'sessions': sessions})
+        except Exception:
+            return jsonify({'sessions': [], 'error': result['error']})
     return jsonify(result)
+
+
+def openclaw_version():
+    """Get OpenClaw version from package.json"""
+    try:
+        pkg = os.path.expanduser('~/.npm-global/lib/node_modules/openclaw/package.json')
+        with open(pkg) as f:
+            return json.load(f).get('version', 'unknown')
+    except Exception:
+        return 'unknown'
 
 @app.route('/api/website-health')
 def api_website_health():
@@ -737,6 +785,39 @@ def duration_filter(ms):
     minutes = int(seconds // 60)
     secs = int(seconds % 60)
     return f'{minutes}m {secs}s'
+
+@app.route('/api/storage')
+def api_storage():
+    """Get current storage usage"""
+    import shutil
+    try:
+        usage = shutil.disk_usage('/')
+        total_gb = round(usage.total / (1024**3), 1)
+        used_gb = round(usage.used / (1024**3), 1)
+        free_gb = round(usage.free / (1024**3), 1)
+        used_pct = round((usage.used / usage.total) * 100, 1)
+        avail_pct = round(100 - used_pct, 1)
+
+        # Check if guardrail health has storage status
+        storage_check = None
+        try:
+            with db_connection() as conn:
+                health = get_latest_health(conn)
+            if health and 'checks' in health:
+                storage_check = health['checks'].get('storage')
+        except Exception:
+            pass
+
+        return jsonify({
+            'total_gb': total_gb,
+            'used_gb': used_gb,
+            'free_gb': free_gb,
+            'used_pct': used_pct,
+            'avail_pct': avail_pct,
+            'status': storage_check.get('status', 'green') if storage_check else ('red' if avail_pct < 10 else 'amber' if avail_pct < 20 else 'green')
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
 @app.route('/api/token-usage/<job_id>/<date>')
 def api_token_usage_detail(job_id, date):
