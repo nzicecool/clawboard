@@ -48,6 +48,13 @@ Thumbs.db
 *.log
 nohup.out
 
+# Database
+*.db
+token_usage.db
+
+# Runtime data
+data/
+
 # Test
 .pytest_cache/
 .coverage

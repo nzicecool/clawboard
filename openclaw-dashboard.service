@@ -4,9 +4,9 @@ After=network.target openclaw.service
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/.openclaw/workspace/dashboard
-Environment="PATH=/home/pi/.local/bin:/usr/bin:/bin"
+User=kanchana
+WorkingDirectory=/home/kanchana/.openclaw/workspace/dashboard
+Environment="PATH=/home/kanchana/.local/bin:/usr/bin:/bin"
 ExecStart=/usr/bin/python3 app.py
 Restart=always
 RestartSec=10

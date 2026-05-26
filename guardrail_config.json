@@ -1,0 +1,52 @@
+{
+  "budget": {
+    "daily_cap_usd": 25,
+    "warning_threshold_pct": 60,
+    "critical_threshold_pct": 100,
+    "pricing": {
+      "glm-5.1": {
+        "input_per_1k": 0.001,
+        "output_per_1k": 0.002,
+        "cache_read_per_1k": 0.0001
+      },
+      "glm-4.7": {
+        "input_per_1k": 0.001,
+        "output_per_1k": 0.002,
+        "cache_read_per_1k": 0.0001
+      },
+      "default": {
+        "input_per_1k": 0.001,
+        "output_per_1k": 0.002,
+        "cache_read_per_1k": 0.0001
+      }
+    }
+  },
+  "per_job": {
+    "max_tokens_per_run": 1000000,
+    "max_duration_ms": 600000,
+    "max_consecutive_failures": 3
+  },
+  "anomaly": {
+    "spike_multiplier": 2.5,
+    "min_runs_for_baseline": 3,
+    "cache_efficiency_floor_pct": 30
+  },
+  "quality": {
+    "empty_result_window_days": 7,
+    "empty_result_threshold_pct": 80
+  },
+  "storage": {
+    "warning_threshold_pct": 20,
+    "critical_threshold_pct": 10
+  },
+  "alerts": {
+    "whatsapp": true,
+    "email": "kanchanaw@senathltd.com",
+    "email_from": "K3a Guardrail <notifications@zined.lk>",
+    "cooldown_minutes": 120,
+    "severities_to_alert": [
+      "critical",
+      "warning"
+    ]
+  }
+}

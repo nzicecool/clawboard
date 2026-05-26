@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Health & Observability - K3a Dashboard</title>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .card { transition: all 0.3s ease; }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
+        @keyframes pulse-amber { 0%,100%{opacity:1} 50%{opacity:0.5} }
+        @keyframes pulse-red { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        .pulse-amber { animation: pulse-amber 2s infinite; }
+        .pulse-red { animation: pulse-red 1.5s infinite; }
+        .refresh-spin { animation: spin 1s linear infinite; }
+        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        .severity-critical { border-left: 4px solid #ef4444; }
+        .severity-warning { border-left: 4px solid #f59e0b; }
+        .severity-info { border-left: 4px solid #3b82f6; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-8">
+            <div>
+                <a href="/" class="no-underline">
+                    <h1 class="text-3xl font-bold bg-gradient-to-r from-green-400 to-cyan-500 bg-clip-text text-transparent hover:scale-105 transition-transform cursor-pointer">
+                        <i class="fas fa-shield-halved mr-2"></i>Health & Observability
+                    </h1>
+                    <p class="text-gray-400 mt-1">Guardrails, anomalies, and system health</p>
+                </a>
+            </div>
+            <div class="flex items-center gap-4">
+                <a href="/token-usage" class="text-sm text-blue-400 hover:text-blue-300"><i class="fas fa-chart-line mr-1"></i>Tokens</a>
+                <a href="/" class="text-sm text-gray-400 hover:text-gray-300"><i class="fas fa-home mr-1"></i>Dashboard</a>
+                <span id="last-updated" class="text-sm text-gray-500"></span>
+                <button onclick="refreshHealth()" id="refresh-btn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- Overall Status Banner -->
+        <div id="status-banner" class="rounded-xl p-6 mb-8 border-2 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div id="status-icon" class="text-5xl">🟢</div>
+                <div>
+                    <h2 id="status-title" class="text-2xl font-bold">System Healthy</h2>
+                    <p id="status-subtitle" class="text-gray-300">All guardrails passing</p>
+                </div>
+            </div>
+            <div class="text-right">
+                <p id="alert-summary" class="text-lg"></p>
+                <p id="last-check-time" class="text-sm text-gray-400"></p>
+            </div>
+        </div>
+
+        <!-- Guardrail Check Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            <div class="card bg-gray-800 rounded-xl p-5 border border-gray-700" id="check-budget">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-semibold text-white"><i class="fas fa-wallet mr-2 text-yellow-400"></i>Budget</h3>
+                    <span id="budget-badge" class="text-xs px-2 py-1 rounded-full">-</span>
+                </div>
+                <div id="budget-details" class="space-y-2 text-sm">
+                    <p class="text-gray-500">Loading...</p>
+                </div>
+            </div>
+
+            <div class="card bg-gray-800 rounded-xl p-5 border border-gray-700" id="check-failures">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-semibold text-white"><i class="fas fa-bug mr-2 text-red-400"></i>Failures</h3>
+                    <span id="failures-badge" class="text-xs px-2 py-1 rounded-full">-</span>
+                </div>
+                <div id="failures-details" class="space-y-2 text-sm">
+                    <p class="text-gray-500">Loading...</p>
+                </div>
+            </div>
+
+            <div class="card bg-gray-800 rounded-xl p-5 border border-gray-700" id="check-anomalies">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-semibold text-white"><i class="fas fa-chart-line mr-2 text-purple-400"></i>Anomalies</h3>
+                    <span id="anomalies-badge" class="text-xs px-2 py-1 rounded-full">-</span>
+                </div>
+                <div id="anomalies-details" class="space-y-2 text-sm">
+                    <p class="text-gray-500">Loading...</p>
+                </div>
+            </div>
+
+            <div class="card bg-gray-800 rounded-xl p-5 border border-gray-700" id="check-duration">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-semibold text-white"><i class="fas fa-clock mr-2 text-blue-400"></i>Duration</h3>
+                    <span id="duration-badge" class="text-xs px-2 py-1 rounded-full">-</span>
+                </div>
+                <div id="duration-details" class="space-y-2 text-sm">
+                    <p class="text-gray-500">Loading...</p>
+                </div>
+            </div>
+
+            <div class="card bg-gray-800 rounded-xl p-5 border border-gray-700" id="check-cache">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-semibold text-white"><i class="fas fa-bolt mr-2 text-amber-400"></i>Cache Efficiency</h3>
+                    <span id="cache-badge" class="text-xs px-2 py-1 rounded-full">-</span>
+                </div>
+                <div id="cache-details" class="space-y-2 text-sm">
+                    <p class="text-gray-500">Loading...</p>
+                </div>
+            </div>
+
+            <div class="card bg-gray-800 rounded-xl p-5 border border-gray-700" id="check-quality">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-semibold text-white"><i class="fas fa-check-double mr-2 text-green-400"></i>Result Quality</h3>
+                    <span id="quality-badge" class="text-xs px-2 py-1 rounded-full">-</span>
+                </div>
+                <div id="quality-details" class="space-y-2 text-sm">
+                    <p class="text-gray-500">Loading...</p>
+                </div>
+            </div>
+
+            <div class="card bg-gray-800 rounded-xl p-5 border border-gray-700" id="check-storage">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-semibold text-white"><i class="fas fa-hard-drive mr-2 text-cyan-400"></i>Storage</h3>
+                    <span id="storage-badge" class="text-xs px-2 py-1 rounded-full">-</span>
+                </div>
+                <div id="storage-details" class="space-y-2 text-sm">
+                    <p class="text-gray-500">Loading...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alert Feed & Budget Chart -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <!-- Alert Feed -->
+            <div class="lg:col-span-2 card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold text-white">
+                        <i class="fas fa-bell mr-2 text-yellow-400"></i>Alert Feed
+                    </h3>
+                    <div class="flex gap-2">
+                        <button onclick="filterAlerts('all')" class="text-xs px-3 py-1 bg-gray-700 rounded-full hover:bg-gray-600" id="filter-all">All</button>
+                        <button onclick="filterAlerts('critical')" class="text-xs px-3 py-1 bg-gray-700 rounded-full hover:bg-red-900" id="filter-critical">Critical</button>
+                        <button onclick="filterAlerts('warning')" class="text-xs px-3 py-1 bg-gray-700 rounded-full hover:bg-yellow-900" id="filter-warning">Warning</button>
+                        <button onclick="filterAlerts('info')" class="text-xs px-3 py-1 bg-gray-700 rounded-full hover:bg-blue-900" id="filter-info">Info</button>
+                    </div>
+                </div>
+                <div id="alert-feed" class="space-y-3 max-h-96 overflow-y-auto">
+                    <p class="text-gray-500 text-center py-4">Loading...</p>
+                </div>
+            </div>
+
+            <!-- Budget Gauge -->
+            <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <h3 class="text-lg font-semibold text-white mb-4">
+                    <i class="fas fa-gauge-high mr-2 text-green-400"></i>Daily Budget
+                </h3>
+                <div class="h-64">
+                    <canvas id="budgetGauge"></canvas>
+                </div>
+                <div id="budget-breakdown" class="mt-4 space-y-2 text-sm"></div>
+            </div>
+        </div>
+
+        <!-- Guardrail Config (Quick Edit) -->
+        <div class="card bg-gray-800 rounded-xl p-6 border border-gray-700 mb-8">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-white">
+                    <i class="fas fa-sliders mr-2 text-cyan-400"></i>Guardrail Configuration
+                </h3>
+                <button onclick="saveConfig()" class="bg-cyan-600 hover:bg-cyan-700 text-white text-sm px-4 py-2 rounded-lg transition">
+                    <i class="fas fa-save mr-1"></i>Save
+                </button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                    <label class="text-sm text-gray-400 block mb-1">Daily Budget Cap ($)</label>
+                    <input id="cfg-daily-cap" type="number" step="0.5" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-cyan-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-sm text-gray-400 block mb-1">Warning Threshold (%)</label>
+                    <input id="cfg-warn-pct" type="number" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-cyan-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-sm text-gray-400 block mb-1">Max Tokens Per Run</label>
+                    <input id="cfg-max-tokens" type="number" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-cyan-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-sm text-gray-400 block mb-1">Max Duration (seconds)</label>
+                    <input id="cfg-max-duration" type="number" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-cyan-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-sm text-gray-400 block mb-1">Consecutive Failure Limit</label>
+                    <input id="cfg-max-fails" type="number" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-cyan-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-sm text-gray-400 block mb-1">Alert Cooldown (minutes)</label>
+                    <input id="cfg-cooldown" type="number" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-cyan-500 focus:outline-none">
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="mt-4 text-center text-gray-500 text-sm">
+            <p>Guardrail engine checks: budget, failures, anomalies, duration, cache efficiency, result quality</p>
+            <p class="mt-1">Alerts via WhatsApp + <span id="alert-email">kanchanaw@senathltd.com</span></p>
+        </div>
+    </div>
+
+    <script>
+        let healthData = null;
+        let alertsData = [];
+        let configData = null;
+        let budgetChart = null;
+        let activeFilter = 'all';
+
+        const statusConfig = {
+            green: { icon: '🟢', title: 'System Healthy', subtitle: 'All guardrails passing', bg: 'bg-green-900/30 border-green-500', badge: 'bg-green-500/20 text-green-400' },
+            amber: { icon: '🟡', title: 'Warnings Detected', subtitle: 'Some guardrails need attention', bg: 'bg-yellow-900/30 border-yellow-500 pulse-amber', badge: 'bg-yellow-500/20 text-yellow-400' },
+            red: { icon: '🔴', title: 'Critical Issues', subtitle: 'Immediate action required', bg: 'bg-red-900/30 border-red-500 pulse-red', badge: 'bg-red-500/20 text-red-400' }
+        };
+
+        function formatNum(n) {
+            if (n === undefined || n === null) return '-';
+            return n.toLocaleString();
+        }
+
+        function formatCost(usd) {
+            return '$' + (usd || 0).toFixed(4);
+        }
+
+        function timeAgo(isoStr) {
+            if (!isoStr) return '-';
+            try {
+                const d = new Date(isoStr);
+                const diff = Date.now() - d.getTime();
+                const mins = Math.floor(diff / 60000);
+                if (mins < 1) return 'just now';
+                if (mins < 60) return `${mins}m ago`;
+                const hrs = Math.floor(mins / 60);
+                if (hrs < 24) return `${hrs}h ago`;
+                return `${Math.floor(hrs/24)}d ago`;
+            } catch { return '-'; }
+        }
+
+        function escapeHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        function statusBadge(status) {
+            const c = statusConfig[status] || statusConfig.green;
+            return `<span class="${c.badge} text-xs px-2 py-1 rounded-full font-semibold">${status.toUpperCase()}</span>`;
+        }
+
+        async function refreshHealth() {
+            const btn = document.getElementById('refresh-btn');
+            btn.classList.add('opacity-50');
+            btn.querySelector('i').classList.add('refresh-spin');
+
+            try {
+                const [healthRes, alertsRes, configRes] = await Promise.all([
+                    fetch('/api/health/refresh').then(r => r.json()),
+                    fetch('/api/alerts?limit=50').then(r => r.json()),
+                    fetch('/api/guardrail-config').then(r => r.json())
+                ]);
+
+                healthData = healthRes.health || healthRes;
+                alertsData = alertsRes.alerts || [];
+                configData = configRes;
+
+                renderAll();
+            } catch (e) {
+                console.error('Failed to load health:', e);
+            } finally {
+                btn.classList.remove('opacity-50');
+                btn.querySelector('i').classList.remove('refresh-spin');
+            }
+        }
+
+        function renderAll() {
+            renderBanner();
+            renderCheckCards();
+            renderAlertFeed();
+            renderBudgetGauge();
+            renderConfig();
+            document.getElementById('last-updated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+        }
+
+        function renderBanner() {
+            const overall = healthData.overall || 'unknown';
+            const cfg = statusConfig[overall] || statusConfig.green;
+            const banner = document.getElementById('status-banner');
+            banner.className = `rounded-xl p-6 mb-8 border-2 flex items-center justify-between ${cfg.bg}`;
+            document.getElementById('status-icon').textContent = cfg.icon;
+            document.getElementById('status-title').textContent = cfg.title;
+            document.getElementById('status-subtitle').textContent = cfg.subtitle;
+
+            const summary = healthData.alert_summary || {};
+            document.getElementById('alert-summary').innerHTML = [
+                summary.critical ? `<span class="text-red-400 font-bold">${summary.critical} critical</span>` : '',
+                summary.warning ? `<span class="text-yellow-400 font-bold">${summary.warning} warning</span>` : '',
+                summary.info ? `<span class="text-blue-400">${summary.info} info</span>` : ''
+            ].filter(Boolean).join(' · ') || 'No active alerts';
+
+            document.getElementById('last-check-time').textContent = 'Last check: ' + timeAgo(healthData.last_check);
+        }
+
+        function renderCheckCards() {
+            const checks = healthData.checks || {};
+
+            // Budget
+            const budget = checks.budget || {};
+            document.getElementById('budget-badge').outerHTML = statusBadge(budget.status);
+            document.getElementById('budget-details').innerHTML = `
+                <div class="flex justify-between"><span class="text-gray-400">Spent today</span><span class="font-semibold text-white">${formatCost(budget.cost_today)}</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Daily cap</span><span class="text-gray-300">${formatCost(budget.cap)}</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Usage</span><span class="font-semibold ${budget.pct_used > 75 ? 'text-yellow-400' : 'text-green-400'}">${budget.pct_used}%</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Tokens</span><span class="text-gray-300">${formatNum(budget.tokens_today)}</span></div>
+                <div class="mt-2 w-full bg-gray-700 rounded-full h-2">
+                    <div class="h-2 rounded-full ${budget.pct_used > 100 ? 'bg-red-500' : budget.pct_used > 75 ? 'bg-yellow-500' : 'bg-green-500'}" style="width: ${Math.min(budget.pct_used || 0, 100)}%"></div>
+                </div>
+            `;
+
+            // Failures
+            const failures = checks.failures || {};
+            document.getElementById('failures-badge').outerHTML = statusBadge(failures.status);
+            const failingList = (failures.failing_jobs || []).map(j =>
+                `<div class="text-red-400"><i class="fas fa-exclamation-triangle mr-1"></i>${escapeHtml(j.name)} (${j.consecutive} fails)</div>`
+            ).join('');
+            document.getElementById('failures-details').innerHTML = failingList || `
+                <div class="flex justify-between"><span class="text-gray-400">Jobs monitored</span><span class="text-green-400">${failures.total_jobs || 0}</span></div>
+                <div class="text-green-400"><i class="fas fa-check-circle mr-1"></i>No failures detected</div>
+            `;
+
+            // Anomalies
+            const anomalies = checks.anomalies || {};
+            document.getElementById('anomalies-badge').outerHTML = statusBadge(anomalies.status);
+            const spikeList = (anomalies.token_spikes || []).map(s =>
+                `<div class="text-yellow-400"><i class="fas fa-arrow-trend-up mr-1"></i>${escapeHtml(s.name)}: +${s.pct_over}%</div>`
+            ).join('');
+            document.getElementById('anomalies-details').innerHTML = spikeList || `
+                <div class="text-green-400"><i class="fas fa-check-circle mr-1"></i>No token spikes detected</div>
+            `;
+
+            // Duration
+            const duration = checks.duration || {};
+            document.getElementById('duration-badge').outerHTML = statusBadge(duration.status);
+            const slowList = (duration.slow_jobs || []).map(s =>
+                `<div class="text-yellow-400"><i class="fas fa-hourglass mr-1"></i>${escapeHtml(s.name)}: ${(s.duration_ms/1000).toFixed(0)}s</div>`
+            ).join('');
+            document.getElementById('duration-details').innerHTML = slowList || `
+                <div class="text-green-400"><i class="fas fa-check-circle mr-1"></i>No slow runs detected</div>
+            `;
+
+            // Cache
+            const cache = checks.cache || {};
+            document.getElementById('cache-badge').outerHTML = statusBadge(cache.status);
+            document.getElementById('cache-details').innerHTML = `
+                <div class="flex justify-between"><span class="text-gray-400">Cache ratio</span><span class="font-semibold ${cache.cache_ratio_pct < 30 ? 'text-yellow-400' : 'text-green-400'}">${cache.cache_ratio_pct}%</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Cache reads</span><span class="text-gray-300">${formatNum(cache.total_cache_read)}</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Total input</span><span class="text-gray-300">${formatNum(cache.total_input)}</span></div>
+            `;
+
+            // Quality
+            const quality = checks.quality || {};
+            document.getElementById('quality-badge').outerHTML = statusBadge(quality.status);
+            const emptyList = (quality.empty_jobs || []).map(j =>
+                `<div class="text-yellow-400"><i class="fas fa-ghost mr-1"></i>${escapeHtml(j.name)}: ${j.empty_pct}% empty</div>`
+            ).join('');
+            document.getElementById('quality-details').innerHTML = emptyList || `
+                <div class="text-green-400"><i class="fas fa-check-circle mr-1"></i>All agents returning results</div>
+            `;
+
+            // Storage
+            const storage = checks.storage || {};
+            document.getElementById('storage-badge').outerHTML = statusBadge(storage.status);
+            const availColor = storage.avail_pct <= 10 ? 'text-red-400' : storage.avail_pct <= 20 ? 'text-yellow-400' : 'text-green-400';
+            const barColor = storage.used_pct >= 90 ? 'bg-red-500' : storage.used_pct >= 80 ? 'bg-yellow-500' : 'bg-green-500';
+            document.getElementById('storage-details').innerHTML = `
+                <div class="flex justify-between"><span class="text-gray-400">Total</span><span class="text-gray-300">${storage.total_gb || '-'}GB</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Used</span><span class="font-semibold text-white">${storage.used_gb || '-'}GB (${storage.used_pct || '-'}%)</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Available</span><span class="font-semibold ${availColor}">${storage.free_gb || '-'}GB (${storage.avail_pct || '-'}%)</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Alert at</span><span class="text-gray-300">< ${storage.warning_threshold_pct || 20}% free</span></div>
+                <div class="mt-2 w-full bg-gray-700 rounded-full h-2">
+                    <div class="h-2 rounded-full ${barColor}" style="width: ${storage.used_pct || 0}%"></div>
+                </div>
+            `;
+        }
+
+        function renderAlertFeed() {
+            const container = document.getElementById('alert-feed');
+            let filtered = alertsData;
+            if (activeFilter !== 'all') {
+                filtered = alertsData.filter(a => a.severity === activeFilter);
+            }
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-center py-4">No alerts</p>';
+                return;
+            }
+
+            container.innerHTML = filtered.map(a => {
+                const severityColors = {
+                    critical: { bg: 'bg-red-500/10 border-red-500', icon: 'fas fa-circle-exclamation text-red-400', title: 'text-red-400' },
+                    warning: { bg: 'bg-yellow-500/10 border-yellow-500', icon: 'fas fa-triangle-exclamation text-yellow-400', title: 'text-yellow-400' },
+                    info: { bg: 'bg-blue-500/10 border-blue-500', icon: 'fas fa-circle-info text-blue-400', title: 'text-blue-400' }
+                };
+                const sc = severityColors[a.severity] || severityColors.info;
+                return `
+                    <div class="rounded-lg p-3 ${sc.bg} severity-${a.severity}">
+                        <div class="flex items-start gap-2">
+                            <i class="${sc.icon} mt-0.5"></i>
+                            <div class="flex-1">
+                                <div class="flex items-center justify-between">
+                                    <span class="font-semibold ${sc.title} text-sm">${escapeHtml(a.title)}</span>
+                                    <span class="text-xs text-gray-500">${timeAgo(a.timestamp)}</span>
+                                </div>
+                                <p class="text-gray-300 text-xs mt-1">${escapeHtml(a.message)}</p>
+                                ${a.job_name ? `<span class="text-xs text-gray-500 mt-1 inline-block"><i class="fas fa-robot mr-1"></i>${escapeHtml(a.job_name)}</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function filterAlerts(severity) {
+            activeFilter = severity;
+            document.querySelectorAll('[id^="filter-"]').forEach(b => b.classList.remove('bg-cyan-600'));
+            document.getElementById(`filter-${severity}`).classList.add('bg-cyan-600');
+            renderAlertFeed();
+        }
+
+        function renderBudgetGauge() {
+            const budget = (healthData.checks || {}).budget || {};
+            const pct = budget.pct_used || 0;
+            const cap = budget.cap || 10;
+            const spent = budget.cost_today || 0;
+            const breakdown = budget.breakdown || {};
+
+            if (budgetChart) budgetChart.destroy();
+
+            // Build breakdown labels
+            const labels = ['Remaining'];
+            const data = [Math.max(cap - spent, 0)];
+            const colors = ['rgba(34,197,94,0.3)'];
+            const borderColors = ['rgba(34,197,94,0.8)'];
+
+            for (const [key, val] of Object.entries(breakdown)) {
+                if (val.cost > 0) {
+                    const name = key === 'cron' ? 'Scheduled Tasks' : key;
+                    labels.push(name);
+                    data.push(val.cost);
+                    const hue = key === 'cron' ? '59,130,246' : key === 'WhatsApp Chat' ? '34,197,94' : '168,85,247';
+                    colors.push(`rgba(${hue},0.3)`);
+                    borderColors.push(`rgba(${hue},0.8)`);
+                }
+            }
+
+            budgetChart = new Chart(document.getElementById('budgetGauge'), {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: colors,
+                        borderColor: borderColors,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => `${ctx.label}: $${ctx.raw.toFixed(4)}`
+                            }
+                        }
+                    }
+                },
+                plugins: [{
+                    id: 'centerText',
+                    beforeDraw(chart) {
+                        const { ctx, width, height } = chart;
+                        ctx.save();
+                        ctx.textAlign = 'center';
+                        ctx.fillStyle = pct > 75 ? '#f59e0b' : '#22c55e';
+                        ctx.font = 'bold 24px sans-serif';
+                        ctx.fillText(`${pct.toFixed(1)}%`, width/2, height/2 - 5);
+                        ctx.fillStyle = '#9ca3af';
+                        ctx.font = '12px sans-serif';
+                        ctx.fillText('of daily cap', width/2, height/2 + 15);
+                        ctx.restore();
+                    }
+                }]
+            });
+
+            // Breakdown list
+            const bd = document.getElementById('budget-breakdown');
+            bd.innerHTML = Object.entries(breakdown).map(([key, val]) => {
+                const name = key === 'cron' ? 'Scheduled' : key;
+                return `<div class="flex justify-between"><span class="text-gray-400">${name}</span><span class="text-white">${formatCost(val.cost)}</span></div>`;
+            }).join('') + `<div class="flex justify-between border-t border-gray-700 pt-1 mt-1"><span class="text-gray-400 font-semibold">Total</span><span class="text-white font-semibold">${formatCost(spent)} / ${formatCost(cap)}</span></div>`;
+        }
+
+        function renderConfig() {
+            if (!configData || configData.error) return;
+            document.getElementById('cfg-daily-cap').value = configData.budget?.daily_cap_usd || 10;
+            document.getElementById('cfg-warn-pct').value = configData.budget?.warning_threshold_pct || 75;
+            document.getElementById('cfg-max-tokens').value = configData.per_job?.max_tokens_per_run || 500000;
+            document.getElementById('cfg-max-duration').value = Math.round((configData.per_job?.max_duration_ms || 600000) / 1000);
+            document.getElementById('cfg-max-fails').value = configData.per_job?.max_consecutive_failures || 3;
+            document.getElementById('cfg-cooldown').value = configData.alerts?.cooldown_minutes || 120;
+            document.getElementById('alert-email').textContent = configData.alerts?.email || '-';
+        }
+
+        async function saveConfig() {
+            const updates = {
+                budget: {
+                    daily_cap_usd: parseFloat(document.getElementById('cfg-daily-cap').value),
+                    warning_threshold_pct: parseInt(document.getElementById('cfg-warn-pct').value)
+                },
+                per_job: {
+                    max_tokens_per_run: parseInt(document.getElementById('cfg-max-tokens').value),
+                    max_duration_ms: parseInt(document.getElementById('cfg-max-duration').value) * 1000,
+                    max_consecutive_failures: parseInt(document.getElementById('cfg-max-fails').value)
+                },
+                alerts: {
+                    cooldown_minutes: parseInt(document.getElementById('cfg-cooldown').value)
+                }
+            };
+
+            try {
+                const res = await fetch('/api/guardrail-config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(updates)
+                });
+                const data = await res.json();
+                if (data.status === 'updated') {
+                    alert('✅ Configuration saved');
+                    refreshHealth();
+                } else {
+                    alert('❌ Error: ' + (data.error || 'Unknown'));
+                }
+            } catch (e) {
+                alert('❌ Failed to save: ' + e.message);
+            }
+        }
+
+        // Initial load
+        refreshHealth();
+    </script>
+</body>
+</html>
