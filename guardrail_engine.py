@@ -15,7 +15,7 @@ from pathlib import Path
 
 OPENCLAW_DIR = os.path.expanduser('~/.openclaw')
 WORKSPACE = os.path.expanduser('~/.openclaw/workspace')
-DASHBOARD_DIR = os.path.join(WORKSPACE, 'dashboard')
+DASHBOARD_DIR = os.path.dirname(os.path.abspath(__file__))
 CRON_JOBS_FILE = os.path.join(OPENCLAW_DIR, 'cron', 'jobs.json')
 CRON_RUNS_DIR = os.path.join(OPENCLAW_DIR, 'cron', 'runs')
 SESSIONS_DIR = os.path.join(OPENCLAW_DIR, 'agents', 'main', 'sessions')

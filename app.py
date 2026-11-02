@@ -422,19 +422,27 @@ def token_usage():
 
 @app.route('/api/cron-jobs')
 def api_cron_jobs():
-    """Get all cron jobs"""
+    """Get all cron jobs (via OpenClaw CLI; falls back to legacy jobs.json)"""
+    result = run_openclaw_command(['cron', 'list', '--json'], timeout=25)
+    if isinstance(result, dict) and result.get('jobs') is not None:
+        return jsonify(result)
     try:
         with open(CRON_JOBS_FILE, 'r') as f:
             data = json.load(f)
         return jsonify(data)
     except FileNotFoundError:
-        return jsonify({'error': 'Cron jobs file not found', 'jobs': []}), 404
+        return jsonify({'error': 'No cron jobs found', 'jobs': []}), 404
     except Exception as e:
         return jsonify({'error': str(e), 'jobs': []}), 500
 
 @app.route('/api/cron-jobs/<job_id>')
 def api_cron_job_detail(job_id):
-    """Get details of a specific cron job"""
+    """Get details of a specific cron job (via CLI; falls back to legacy runs file)"""
+    result = run_openclaw_command(['cron', 'runs', '--jobId', job_id, '--json'], timeout=25)
+    if isinstance(result, dict) and (result.get('runs') is not None):
+        runs = result.get('runs') or []
+        runs.sort(key=lambda x: x.get('startedAtMs', 0), reverse=True)
+        return jsonify({'jobId': job_id, 'runs': runs})
     runs_file = os.path.join(CRON_RUNS_DIR, f'{job_id}.jsonl')
     try:
         runs = []
@@ -446,7 +454,6 @@ def api_cron_job_detail(job_id):
                         runs.append(run)
                     except json.JSONDecodeError:
                         pass
-        # Sort by startedAtMs descending (newest first)
         runs.sort(key=lambda x: x.get('startedAtMs', 0), reverse=True)
         return jsonify({'jobId': job_id, 'runs': runs})
     except FileNotFoundError:
@@ -510,18 +517,11 @@ def api_sessions():
     """Get list of sessions via gateway API"""
     result = gateway_api('/v1/sessions')
     if 'error' in result:
-        # Try listing session dirs as fallback
-        try:
-            sessions = []
-            agents_dir = os.path.expanduser('~/.openclaw/agents/main/sessions')
-            if os.path.isdir(agents_dir):
-                for d in os.listdir(agents_dir):
-                    p = os.path.join(agents_dir, d)
-                    if os.path.isdir(p):
-                        sessions.append({'id': d, 'path': p})
-            return jsonify({'sessions': sessions})
-        except Exception:
-            return jsonify({'sessions': [], 'error': result['error']})
+        # Try CLI as fallback
+        result = run_openclaw_command(['sessions', '--active', '10080', '--json'], timeout=25)
+        if isinstance(result, dict) and result.get('sessions') is not None:
+            return jsonify({'sessions': result['sessions']})
+        return jsonify({'sessions': [], 'error': result.get('error', 'unavailable')})
     return jsonify(result)
 
 
@@ -554,7 +554,11 @@ def api_website_health():
 
 @app.route('/api/running-jobs')
 def api_running_jobs():
-    """Get currently running jobs"""
+    """Get currently running jobs (via CLI status; falls back to legacy files)"""
+    result = run_openclaw_command(['cron', 'list', '--json'], timeout=25)
+    if isinstance(result, dict) and result.get('jobs') is not None:
+        running = [j for j in result['jobs'] if j.get('status') == 'running']
+        return jsonify({'count': len(running), 'jobs': [{'jobId': j.get('id'), 'name': j.get('displayName') or j.get('name')} for j in running]})
     try:
         # Load cron jobs
         with open(CRON_JOBS_FILE, 'r') as f:

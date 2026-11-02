@@ -11,7 +11,7 @@ import json
 from datetime import datetime
 
 # Add dashboard dir to path
-DASHBOARD_DIR = os.path.expanduser('~/.openclaw/workspace/dashboard')
+DASHBOARD_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, DASHBOARD_DIR)
 
 from guardrail_engine import run_guardrails
