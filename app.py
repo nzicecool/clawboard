@@ -134,15 +134,47 @@ def ingest_interactive_token_data():
 
 
 def run_full_ingestion():
-    """Run full ingestion from cron runs + interactive sessions."""
-    cron_count = ingest_cron_token_data()
-    interactive_count = ingest_interactive_token_data()
-    print(f"Ingestion complete: {cron_count} cron entries, {interactive_count} interactive entries")
-    return cron_count, interactive_count
-
-
-# Ingestion will run after all function definitions are loaded
-_STARTUP_INGEST = True
+    """Ingest token usage from live session data (via CLI; legacy cron/runs paths retired)."""
+    result = run_openclaw_command(['sessions', '--json'], timeout=90)
+    sessions = result.get('sessions', []) if isinstance(result, dict) else []
+    if not sessions:
+        return 0
+    wm_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'ingest_watermark.json')
+    try:
+        watermark = json.load(open(wm_path))
+    except Exception:
+        watermark = {}
+    cron_count, interactive_count = 0, 0
+    with db_connection() as conn:
+        for s in sessions:
+            key = s.get('key') or s.get('sessionKey') or ''
+            updated = s.get('updatedAtMs') or s.get('updatedAt') or 0
+            if not isinstance(updated, int) or updated <= watermark.get(key, 0):
+                continue
+            usage = s.get('usage') or {}
+            inp = usage.get('inputTokens') or s.get('inputTokens') or 0
+            out = usage.get('outputTokens') or s.get('outputTokens') or 0
+            tot = usage.get('totalTokens') or s.get('totalTokens') or 0
+            cache = usage.get('cacheRead') or 0
+            model = s.get('model') or 'unknown'
+            provider = s.get('modelProvider') or 'unknown'
+            label = (s.get('derivedTitle') or s.get('label') or key)[:60]
+            try:
+                if s.get('kind') == 'cron' or ':cron:' in key:
+                    save_token_data(key[:40], label, inp, out, tot, updated, s.get('sessionId'), provider, model, cache, 0)
+                    cron_count += 1
+                else:
+                    save_interactive_entry(conn, updated, key[:120], 'interactive', provider, model, inp, out, cache, tot)
+                    interactive_count += 1
+                watermark[key] = updated
+            except Exception as e:
+                print(f"Ingest skip {key}: {e}")
+    try:
+        json.dump(watermark, open(wm_path, 'w'))
+    except Exception:
+        pass
+    print(f"Ingestion complete: {cron_count} cron, {interactive_count} interactive")
+    return cron_count + interactive_count
 
 def classify_session_key(session_key):
     """Classify a sessionKey into a human-readable category"""
@@ -343,7 +375,7 @@ def cleanup_old_token_files():
     except Exception as e:
         print(f"Error cleaning up token data: {e}")
 
-def run_openclaw_command(args, timeout=10):
+def run_openclaw_command(args, timeout=90):
     """Run OpenClaw CLI commands and return JSON output"""
     openclaw_bin = os.path.expanduser('~/.npm-global/bin/openclaw')
     cmd = [openclaw_bin] + args
@@ -423,7 +455,7 @@ def token_usage():
 @app.route('/api/cron-jobs')
 def api_cron_jobs():
     """Get all cron jobs (via OpenClaw CLI; falls back to legacy jobs.json)"""
-    result = run_openclaw_command(['cron', 'list', '--json'], timeout=25)
+    result = run_openclaw_command(['cron', 'list', '--json'], timeout=90)
     if isinstance(result, dict) and result.get('jobs') is not None:
         return jsonify(result)
     try:
@@ -438,7 +470,7 @@ def api_cron_jobs():
 @app.route('/api/cron-jobs/<job_id>')
 def api_cron_job_detail(job_id):
     """Get details of a specific cron job (via CLI; falls back to legacy runs file)"""
-    result = run_openclaw_command(['cron', 'runs', '--jobId', job_id, '--json'], timeout=25)
+    result = run_openclaw_command(['cron', 'runs', '--jobId', job_id, '--json'], timeout=90)
     if isinstance(result, dict) and (result.get('runs') is not None):
         runs = result.get('runs') or []
         runs.sort(key=lambda x: x.get('startedAtMs', 0), reverse=True)
@@ -518,7 +550,7 @@ def api_sessions():
     result = gateway_api('/v1/sessions')
     if 'error' in result:
         # Try CLI as fallback
-        result = run_openclaw_command(['sessions', '--active', '10080', '--json'], timeout=25)
+        result = run_openclaw_command(['sessions', '--active', '10080', '--json'], timeout=90)
         if isinstance(result, dict) and result.get('sessions') is not None:
             return jsonify({'sessions': result['sessions']})
         return jsonify({'sessions': [], 'error': result.get('error', 'unavailable')})
@@ -555,7 +587,7 @@ def api_website_health():
 @app.route('/api/running-jobs')
 def api_running_jobs():
     """Get currently running jobs (via CLI status; falls back to legacy files)"""
-    result = run_openclaw_command(['cron', 'list', '--json'], timeout=25)
+    result = run_openclaw_command(['cron', 'list', '--json'], timeout=90)
     if isinstance(result, dict) and result.get('jobs') is not None:
         running = [j for j in result['jobs'] if j.get('status') == 'running']
         return jsonify({'count': len(running), 'jobs': [{'jobId': j.get('id'), 'name': j.get('displayName') or j.get('name')} for j in running]})
