@@ -681,25 +681,28 @@ def api_running_jobs():
 
 @app.route('/api/token-usage')
 def api_token_usage():
-    """Get aggregated token usage data from SQLite"""
+    """Token usage from the ground-truth usage_ledger (model.completed events)."""
     try:
-        # Re-ingest latest data before serving
         try:
-            run_full_ingestion()
+            import usage_ingest
+            usage_ingest.ingest()
         except Exception:
             pass
-
-        cleanup_old_token_files()
-
-        now_ms = int(datetime.now().timestamp() * 1000)
-
         with db_connection() as conn:
-            usage_data = get_token_usage_aggregated(conn, now_ms)
-
-        return jsonify(usage_data)
-
+            total = conn.execute('select count(*), coalesce(sum(total_tokens),0), coalesce(sum(input_tokens),0), coalesce(sum(output_tokens),0), coalesce(sum(cost_usd),0) from usage_ledger').fetchone()
+            by_day = {}
+            for day, tin, tout, ttot, cost in conn.execute('select day, sum(input_tokens), sum(output_tokens), sum(total_tokens), sum(cost_usd) from usage_ledger group by day order by day'):
+                by_day[day] = {'input_tokens': tin, 'output_tokens': tout, 'total_tokens': ttot, 'cost_usd': round(cost or 0, 4)}
+            by_category = {}
+            for cat, ttot, cost in conn.execute('select category, sum(total_tokens), sum(cost_usd) from usage_ledger group by category order by sum(total_tokens) desc'):
+                by_category[cat] = {'total_tokens': ttot, 'cost_usd': round(cost or 0, 4)}
+        return jsonify({
+            'total': {'calls': total[0], 'total_tokens': total[1], 'input_tokens': total[2], 'output_tokens': total[3], 'cost_usd': round(total[4], 4)},
+            'by_day': by_day, 'by_category': by_category,
+        })
     except Exception as e:
         return jsonify({'error': str(e), 'total': {'total_tokens': 0}})
+
 
 @app.route('/health')
 def health_page():
