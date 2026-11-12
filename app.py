@@ -696,9 +696,23 @@ def api_token_usage():
             by_category = {}
             for cat, ttot, cost in conn.execute('select category, sum(total_tokens), sum(cost_usd) from usage_ledger group by category order by sum(total_tokens) desc'):
                 by_category[cat] = {'total_tokens': ttot, 'cost_usd': round(cost or 0, 4)}
+        import datetime as _dt
+        today_s = _dt.date.today().isoformat()
+        week_ago = (_dt.date.today() - _dt.timedelta(days=7)).isoformat()
+        buckets = {'today': {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0, 'cost_usd': 0},
+                   'week': {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0, 'cost_usd': 0},
+                   'older_than_week': {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0, 'cost_usd': 0}}
+        for day, d in by_day.items():
+            k = 'today' if day == today_s else ('week' if day >= week_ago else 'older_than_week')
+            for fld in buckets[k]:
+                buckets[k][fld] += d.get(fld, 0)
+        by_day_legacy = dict(by_day)
+        by_day_legacy.update(buckets)
         return jsonify({
-            'total': {'calls': total[0], 'total_tokens': total[1], 'input_tokens': total[2], 'output_tokens': total[3], 'cost_usd': round(total[4], 4)},
-            'by_day': by_day, 'by_category': by_category,
+            'total': {'total_runs': total[0], 'total_tokens': total[1], 'input_tokens': total[2],
+                      'output_tokens': total[3], 'cost_usd': round(total[4], 4),
+                      'estimated_cost': round(total[4], 4)},
+            'by_day': by_day_legacy, 'by_category': by_category, 'by_date': by_day,
         })
     except Exception as e:
         return jsonify({'error': str(e), 'total': {'total_tokens': 0}})
