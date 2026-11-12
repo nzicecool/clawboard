@@ -442,6 +442,11 @@ def get_skills_list():
 
     return sorted(skills, key=lambda x: x['name'])
 
+
+def _dt_parse(ts):
+    import datetime
+    return datetime.datetime.fromisoformat(ts.replace('Z', '+00:00')).timestamp()
+
 @app.route('/')
 def index():
     """Main dashboard page"""
@@ -681,41 +686,77 @@ def api_running_jobs():
 
 @app.route('/api/token-usage')
 def api_token_usage():
-    """Token usage from the ground-truth usage_ledger (model.completed events)."""
+    """Full token-usage contract served from the usage_ledger ground truth."""
     try:
         try:
             import usage_ingest
             usage_ingest.ingest()
         except Exception:
             pass
-        with db_connection() as conn:
-            total = conn.execute('select count(*), coalesce(sum(total_tokens),0), coalesce(sum(input_tokens),0), coalesce(sum(output_tokens),0), coalesce(sum(cost_usd),0) from usage_ledger').fetchone()
-            by_day = {}
-            for day, tin, tout, ttot, cost in conn.execute('select day, sum(input_tokens), sum(output_tokens), sum(total_tokens), sum(cost_usd) from usage_ledger group by day order by day'):
-                by_day[day] = {'input_tokens': tin, 'output_tokens': tout, 'total_tokens': ttot, 'cost_usd': round(cost or 0, 4)}
-            by_category = {}
-            for cat, ttot, cost in conn.execute('select category, sum(total_tokens), sum(cost_usd) from usage_ledger group by category order by sum(total_tokens) desc'):
-                by_category[cat] = {'total_tokens': ttot, 'cost_usd': round(cost or 0, 4)}
         import datetime as _dt
+        with db_connection() as conn:
+            t = conn.execute('select count(*), coalesce(sum(total_tokens),0), coalesce(sum(input_tokens),0), coalesce(sum(output_tokens),0), coalesce(sum(cost_usd),0) from usage_ledger').fetchone()
+            daily_rows = conn.execute('select day, sum(input_tokens), sum(output_tokens), sum(total_tokens), sum(cost_usd) from usage_ledger group by day order by day').fetchall()
+            cat_rows = conn.execute('select category, count(*), sum(input_tokens), sum(output_tokens), sum(total_tokens) from usage_ledger group by category order by sum(total_tokens) desc').fetchall()
+            model_rows = conn.execute("select model, count(*), sum(input_tokens), sum(output_tokens), sum(total_tokens) from usage_ledger group by model order by sum(total_tokens) desc").fetchall()
+            prov_rows = conn.execute("select provider, count(*), sum(input_tokens), sum(output_tokens), sum(total_tokens) from usage_ledger group by provider order by sum(total_tokens) desc").fetchall()
         today_s = _dt.date.today().isoformat()
         week_ago = (_dt.date.today() - _dt.timedelta(days=7)).isoformat()
-        buckets = {'today': {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0, 'cost_usd': 0},
-                   'week': {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0, 'cost_usd': 0},
-                   'older_than_week': {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0, 'cost_usd': 0}}
-        for day, d in by_day.items():
+        daily_trends = []
+        by_day_dates = {}
+        buckets = {'today': [0,0,0,0], 'week': [0,0,0,0], 'older_than_week': [0,0,0,0]}
+        for day, tin, tout, ttot, cost in daily_rows:
+            d = {'date': day, 'input_tokens': tin, 'output_tokens': tout, 'total_tokens': ttot, 'cost_usd': round(cost or 0, 4)}
+            daily_trends.append(d)
+            by_day_dates[day] = d
             k = 'today' if day == today_s else ('week' if day >= week_ago else 'older_than_week')
-            for fld in buckets[k]:
-                buckets[k][fld] += d.get(fld, 0)
-        by_day_legacy = dict(by_day)
-        by_day_legacy.update(buckets)
+            for x in range(4):
+                buckets[k][x] += [tin, tout, ttot, round(cost or 0,4)][x]
+        def b(lst):
+            return {'input_tokens': lst[0], 'output_tokens': lst[1], 'total_tokens': lst[2], 'cost_usd': lst[3]}
+        by_day_full = dict(by_day_dates)
+        by_day_full['today'] = b(buckets['today'])
+        by_day_full['week'] = b(buckets['week'])
+        by_day_full['older_than_week'] = b(buckets['older_than_week'])
+        def grp(rows):
+            out = {}
+            for name, runs, tin, tout, ttot in rows:
+                out[name] = {'runs': runs, 'input_tokens': tin, 'output_tokens': tout, 'total_tokens': ttot}
+            return out
+        by_category = grp(cat_rows)
+        by_model = grp(model_rows)
+        by_provider = grp(prov_rows)
+        by_job = []
+        for name, runs, tin, tout, ttot in cat_rows:
+            by_job.append({'job_id': name, 'name': name, 'is_interactive': not str(name).startswith('job:'),
+                           'runs': runs, 'input_tokens': tin, 'output_tokens': tout,
+                           'total_tokens': ttot, 'avg_tokens': int(ttot / runs) if runs else 0})
         return jsonify({
-            'total': {'total_runs': total[0], 'total_tokens': total[1], 'input_tokens': total[2],
-                      'output_tokens': total[3], 'cost_usd': round(total[4], 4),
-                      'estimated_cost': round(total[4], 4)},
-            'by_day': by_day_legacy, 'by_category': by_category, 'by_date': by_day,
+            'total': {'total_runs': t[0], 'total_tokens': t[1], 'input_tokens': t[2], 'output_tokens': t[3],
+                      'estimated_cost': round(t[4], 4), 'cost_usd': round(t[4], 4)},
+            'by_day': by_day_full, 'by_date': by_day_dates, 'daily_trends': daily_trends,
+            'by_category': by_category, 'by_model': by_model, 'by_provider': by_provider, 'by_job': by_job,
         })
     except Exception as e:
-        return jsonify({'error': str(e), 'total': {'total_tokens': 0}})
+        return jsonify({'error': str(e), 'total': {'total_tokens': 0, 'total_runs': 0}})
+
+
+@app.route('/api/token-usage/<path:job_id>/<date>')
+def api_token_usage_detail(job_id, date):
+    """Per-job entries for the modal, from the ledger."""
+    try:
+        with db_connection() as conn:
+            rows = conn.execute('select ts, input_tokens, output_tokens, total_tokens, model from usage_ledger where category = ? and day = ? order by ts', (job_id, date)).fetchall()
+        entries = []
+        for ts, tin, tout, ttot, model in rows:
+            try:
+                ms = int(_dt_parse(ts) * 1000) if ts else None
+            except Exception:
+                ms = None
+            entries.append({'timestamp': ms, 'datetime': ts, 'input_tokens': tin, 'output_tokens': tout, 'total_tokens': ttot, 'model': model})
+        return jsonify({'entries': entries})
+    except Exception as e:
+        return jsonify({'error': str(e), 'entries': []})
 
 
 @app.route('/health')
@@ -871,16 +912,6 @@ def api_storage():
         })
     except Exception as e:
         return jsonify({'error': str(e)})
-
-@app.route('/api/token-usage/<job_id>/<date>')
-def api_token_usage_detail(job_id, date):
-    """Get token usage details for a specific job on a specific date from SQLite"""
-    try:
-        with db_connection() as conn:
-            entries = get_token_usage_by_job_and_date(conn, job_id, date)
-        return jsonify({'job_id': job_id, 'date': date, 'entries': entries, 'total_entries': len(entries)})
-    except Exception as e:
-        return jsonify({'error': str(e), 'entries': []})
 
 if __name__ == '__main__':
     # Run on all interfaces, port 5000
